@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bike } from '../types';
+import { writeBikeTag, isNfcSupported } from '../nfc';
 import { Radio, ScanLine, CreditCard, ChevronRight, CheckCircle, ShieldAlert, Wifi, Info, RotateCw } from 'lucide-react';
 
 interface NfcTabProps {
@@ -16,6 +17,8 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
   const [scanning, setScanning] = useState(false);
   const [scanSuccess, setScanSuccess] = useState(false);
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [nfcMode, setNfcMode] = useState<'real' | 'sim'>('sim');
 
   const startNfcScan = () => {
     setScanning(true);
@@ -38,22 +41,30 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
     setFrameNo('HK-FRAME-' + Math.floor(10000 + Math.random() * 90000));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!model.trim() || !frameNo.trim() || !ownerName.trim()) {
       alert('請填寫所有欄位資料！');
       return;
     }
 
+    const newBike = { model, frameNo, ownerName };
     setStep(3);
-    setTimeout(() => {
-      onAddBike({
-        model,
-        frameNo,
-        ownerName
-      });
-      setIsSubmitSuccess(true);
-    }, 1200);
+    setWriting(true);
+
+    try {
+      // 嘗試真實 NFC 寫入（需 Android Chrome 89+、HTTPS、使用者手勢）
+      await writeBikeTag(newBike);
+      setNfcMode('real');
+    } catch (err) {
+      // 不支援或寫入失敗 → 退回原本的模擬流程
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      setNfcMode('sim');
+    }
+
+    onAddBike(newBike);
+    setWriting(false);
+    setIsSubmitSuccess(true);
   };
 
   const handleCompleteFlow = () => {
@@ -204,11 +215,17 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
         <div className="pt-2">
           <button
             type="submit"
-            className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all shadow-md shadow-[#006b2c]/10 active:scale-95 cursor-pointer"
+            disabled={writing}
+            className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all shadow-md shadow-[#006b2c]/10 active:scale-95 cursor-pointer disabled:bg-zinc-400"
           >
             <Wifi className="w-4 h-4 fill-current shrink-0" />
-            確認登記並上傳數據庫
+            {writing ? '正在寫入 NFC 標籤…' : '確認登記並上傳數據庫'}
           </button>
+          <p className="text-[10px] text-zinc-400 text-center font-medium">
+            {isNfcSupported()
+              ? '本裝置支援 Web NFC，提交時請將手機靠近單車上的 NFC 標籤完成寫入。'
+              : '本裝置不支援 Web NFC（僅 Android 版 Chrome），將以模擬方式示範。'}
+          </p>
         </div>
       </form>
 
@@ -224,8 +241,23 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
             >
               <CheckCircle className="w-16 h-16 text-[#006b2c] mx-auto mb-4" />
               <h3 className="text-base font-bold text-zinc-950 mb-1">感應登記成功！</h3>
+
+              {/* 標示本次是真實 NFC 寫入還是模擬 */}
+              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black mb-3 border ${
+                nfcMode === 'real'
+                  ? 'bg-[#006b2c]/10 text-[#006b2c] border-[#006b2c]/20'
+                  : 'bg-amber-50 text-amber-600 border-amber-100'
+              }`}>
+                <Wifi className="w-3 h-3" />
+                {nfcMode === 'real' ? '已透過裝置 NFC 實體寫入標籤' : '模擬寫入（此裝置不支援 Web NFC）'}
+              </div>
+
               <p className="text-xs text-zinc-500 mb-4 leading-relaxed">
-                車款 <strong>{model}</strong> 經與您的智慧貼紙 NFC 配對成功。目前已將設備寫入香港智能單車管理中心，防盜防丟警報已啟動。
+                {nfcMode === 'real' ? (
+                  <>車款 <strong>{model}</strong> 的資料已實際寫入貼在單車上的 NFC 標籤，並登記至防盜防丟系統。</>
+                ) : (
+                  <>車款 <strong>{model}</strong> 已完成登記。本裝置不支援 Web NFC（僅 Android 版 Chrome 支援），故以模擬方式示範寫入流程。</>
+                )}
               </p>
 
               <div className="bg-zinc-50 p-3 rounded-xl text-xs text-zinc-500 mb-6 text-left space-y-1 my-2">
@@ -236,7 +268,7 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
 
               <button
                 onClick={handleCompleteFlow}
-                className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-32 rounded-xl text-xs font-bold transition-transform active:scale-95 cursor-pointer block"
+                className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-3 rounded-xl text-xs font-bold transition-transform active:scale-95 cursor-pointer block"
               >
                 前往我的單車清單
               </button>

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
+import { haversineKm } from '../carbon';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -40,6 +41,29 @@ interface MapTabProps {
   savedParkingIds: string[];
   toggleSaveParking: (id: string) => void;
   onNavigateStart?: (spotName: string) => void;
+  onTripComplete?: (distanceKm: number) => void;
+}
+
+// 把運輸署開放數據的泊位要素轉成 App 內的 ParkingSpot 結構（含實際距離）
+function featureToSpot(f: any, userPos: { lat: number; lng: number }): ParkingSpot | null {
+  const coords = f?.geometry?.coordinates;
+  if (!coords || coords.length < 2) return null;
+  const [lng, lat] = coords;
+  const cap = Number(f?.properties?.PARKING_SPACE ?? 0);
+  const owner = f?.properties?.OWNER ?? 'TD';
+  const oid = f?.properties?.OBJECTID ?? Math.random().toString(36).slice(2, 8);
+  const km = haversineKm(userPos, { lat, lng });
+  const distance = km < 1 ? `距離 ${Math.round(km * 1000)} 米` : `距離 ${km.toFixed(1)} 公里`;
+  return {
+    id: `td-${oid}`,
+    name: `公共單車泊位 #${oid}`,
+    distance,
+    availableSlots: cap, // 此數據集無即時空位，僅有登記車位數
+    totalSlots: cap,
+    type: `運輸署登記 · ${owner}`,
+    lat,
+    lng,
+  };
 }
 
 // OGC WMS Map Layers provided by Lands Department
@@ -74,7 +98,7 @@ const WMS_SERVICES = [
   }
 ];
 
-export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateStart }: MapTabProps) {
+export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateStart, onTripComplete }: MapTabProps) {
   // Try retrieving the CSDI API key from the environment or LocalStorage (for dynamic user overrides)
   const [csdiKey, setCsdiKey] = useState<string>(() => {
     const saved = localStorage.getItem('HK_CSDI_API_KEY');
@@ -83,7 +107,10 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   });
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSpot, setSelectedSpot] = useState<ParkingSpot>(PARKING_SPOTS[0]);
+  // 泊位來源：運輸署開放數據（載入後填入），API 失敗時退回種子資料
+  const [spots, setSpots] = useState<ParkingSpot[]>([]);
+  const [selectedSpot, setSelectedSpot] = useState<ParkingSpot | null>(null);
+  const [parkingStatus, setParkingStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [isNavigating, setIsNavigating] = useState(false);
   const [navigationProgress, setNavigationProgress] = useState(0);
   const [navigationMessage, setNavigationMessage] = useState('');
@@ -134,8 +161,8 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
 
   // 官方單車數據圖層 refs
   const cyclingTrackLayerRef = useRef<L.GeoJSON | null>(null);
-  const cyclingParkingLayerRef = useRef<L.GeoJSON | null>(null);
   const cyclingAbortRef = useRef<AbortController | null>(null);
+  const parkingAbortRef = useRef<AbortController | null>(null);
 
   // Handle key persistence
   const saveCsdiKey = (key: string) => {
@@ -295,16 +322,15 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
     markersRef.current = {};
 
-    const filteredSpots = PARKING_SPOTS.filter(spot => 
+    const filteredSpots = spots.filter(spot =>
       spot.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       spot.type.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     filteredSpots.forEach((spot) => {
-      const coords = SPOT_COORDINATES[spot.id] || { lat: spot.lat, lng: spot.lng };
-      if (!coords) return;
+      const coords = { lat: spot.lat, lng: spot.lng };
 
-      const isActive = selectedSpot.id === spot.id;
+      const isActive = selectedSpot?.id === spot.id;
       const isWarning = spot.availableSlots === 0;
 
       // Custom high-contrast HTML pin layout
@@ -360,13 +386,13 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       markersRef.current[spot.id] = marker;
     });
 
-  }, [searchQuery, selectedSpot, mapTheme]);
+  }, [searchQuery, selectedSpot, mapTheme, spots]);
 
   // Handle centering map on selected spot
   useEffect(() => {
     if (!mapRef.current || !selectedSpot) return;
-    const coords = SPOT_COORDINATES[selectedSpot.id] || { lat: selectedSpot.lat, lng: selectedSpot.lng } || USER_COORDINATES;
-    
+    const coords = { lat: selectedSpot.lat, lng: selectedSpot.lng };
+
     // Zoom in on target spot smoothly
     mapRef.current.setView([coords.lat, coords.lng], 16, {
       animate: true,
@@ -385,7 +411,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
 
     if (isNavigating && selectedSpot) {
-      const destCoords = SPOT_COORDINATES[selectedSpot.id] || { lat: selectedSpot.lat, lng: selectedSpot.lng };
+      const destCoords = { lat: selectedSpot.lat, lng: selectedSpot.lng };
       if (destCoords) {
         // Draw standard ecological green dashed line
         polylineRef.current = L.polyline(
@@ -414,24 +440,20 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
   }, [isNavigating, selectedSpot]);
 
-  // 載入並渲染運輸署官方單車開放數據（單車徑 + 泊位），依可視範圍 bbox 查詢
+  // A. 載入並渲染運輸署「單車徑」圖層（綠線疊加，由開關控制）
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const clearLayers = () => {
+    const clearLayer = () => {
       if (cyclingTrackLayerRef.current) {
         cyclingTrackLayerRef.current.remove();
         cyclingTrackLayerRef.current = null;
       }
-      if (cyclingParkingLayerRef.current) {
-        cyclingParkingLayerRef.current.remove();
-        cyclingParkingLayerRef.current = null;
-      }
     };
 
     if (!showCyclingData) {
-      clearLayers();
+      clearLayer();
       cyclingAbortRef.current?.abort();
       setCyclingStatus('idle');
       return;
@@ -440,56 +462,27 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     let cancelled = false;
 
     const load = async () => {
-      // 縮得太遠時範圍過大、要素過多，先不載入以保效能
       if (map.getZoom() < 13) {
-        clearLayers();
+        clearLayer();
         if (!cancelled) setCyclingStatus('zoomout');
         return;
       }
-
       cyclingAbortRef.current?.abort();
       const controller = new AbortController();
       cyclingAbortRef.current = controller;
 
       const b = map.getBounds();
-      const bbox = {
-        minLng: b.getWest(),
-        minLat: b.getSouth(),
-        maxLng: b.getEast(),
-        maxLat: b.getNorth(),
-      };
+      const bbox = { minLng: b.getWest(), minLat: b.getSouth(), maxLng: b.getEast(), maxLat: b.getNorth() };
 
       if (!cancelled) setCyclingStatus('loading');
       try {
-        const [tracks, parking] = await Promise.all([
-          fetchCyclingLayer(CYCLING_LAYERS.track, bbox, controller.signal),
-          fetchCyclingLayer(CYCLING_LAYERS.parking, bbox, controller.signal),
-        ]);
+        const tracks = await fetchCyclingLayer(CYCLING_LAYERS.track, bbox, controller.signal);
         if (cancelled) return;
-        clearLayers();
-
-        // 單車徑：綠色實線
+        clearLayer();
         cyclingTrackLayerRef.current = L.geoJSON(tracks, {
-          style: { color: '#006b2c', weight: 3, opacity: 0.6, lineCap: 'round' },
+          style: { color: '#006b2c', weight: 3, opacity: 0.55, lineCap: 'round' },
           onEachFeature: (_f, layer) => layer.bindPopup('<div class="font-bold text-xs">運輸署單車徑</div>'),
         }).addTo(map);
-
-        // 官方泊位：小綠圈，附車位數
-        cyclingParkingLayerRef.current = L.geoJSON(parking, {
-          pointToLayer: (feature: any, latlng) =>
-            L.circleMarker(latlng, {
-              radius: 4,
-              color: '#ffffff',
-              weight: 1.5,
-              fillColor: '#006b2c',
-              fillOpacity: 0.75,
-            }).bindPopup(
-              `<div class="text-xs"><div class="font-bold">官方單車泊位</div>車位數：${
-                feature?.properties?.PARKING_SPACE ?? '—'
-              }（${feature?.properties?.OWNER ?? 'TD'}）</div>`
-            ),
-        }).addTo(map);
-
         if (!cancelled) setCyclingStatus('ok');
       } catch (e: any) {
         if (e?.name === 'AbortError') return;
@@ -506,14 +499,68 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     };
   }, [showCyclingData]);
 
+  // B. 載入運輸署「單車泊位」開放數據，作為地圖上的主要泊位標記（取代原本的捏造資料）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    let cancelled = false;
+
+    const loadParking = async () => {
+      if (map.getZoom() < 13) return; // 太遠不載入，避免大量標記
+      parkingAbortRef.current?.abort();
+      const controller = new AbortController();
+      parkingAbortRef.current = controller;
+
+      const b = map.getBounds();
+      const bbox = { minLng: b.getWest(), minLat: b.getSouth(), maxLng: b.getEast(), maxLat: b.getNorth() };
+
+      setParkingStatus('loading');
+      try {
+        const fc = await fetchCyclingLayer(CYCLING_LAYERS.parking, bbox, controller.signal);
+        if (cancelled) return;
+        const list = (fc?.features ?? [])
+          .map((f: any) => featureToSpot(f, USER_COORDINATES))
+          .filter((s: ParkingSpot | null): s is ParkingSpot => s !== null);
+        setSpots(list);
+        setParkingStatus('ok');
+        // 預設選取最近一個泊位，讓資訊卡有內容
+        setSelectedSpot((prev) => {
+          if (prev && list.some((s: ParkingSpot) => s.id === prev.id)) return prev;
+          return list.length
+            ? list.reduce((a: ParkingSpot, c: ParkingSpot) =>
+                haversineKm(USER_COORDINATES, c) < haversineKm(USER_COORDINATES, a) ? c : a)
+            : null;
+        });
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+        if (cancelled) return;
+        // API 失敗 → 退回種子資料，避免地圖完全空白
+        setParkingStatus('error');
+        setSpots((prev) => (prev.length ? prev : PARKING_SPOTS));
+        setSelectedSpot((prev) => prev ?? PARKING_SPOTS[0]);
+      }
+    };
+
+    loadParking();
+    map.on('moveend', loadParking);
+    return () => {
+      cancelled = true;
+      map.off('moveend', loadParking);
+      parkingAbortRef.current?.abort();
+    };
+  }, []);
+
   // Simulation engine for Navigation progression
   const startNavigation = () => {
+    if (!selectedSpot) return;
+    const dest = selectedSpot;
     setIsNavigating(true);
     setNavigationProgress(0);
     setNavigationMessage('正在透過政府空間數據(CSDI)優化路網規劃...');
-    
+
     if (onNavigateStart) {
-      onNavigateStart(selectedSpot.name);
+      onNavigateStart(dest.name);
     }
 
     setTimeout(() => {
@@ -528,12 +575,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
 
     setTimeout(() => {
       setNavigationProgress(90);
-      setNavigationMessage('接近目的地：前方 20 米右側為 ' + selectedSpot.name);
+      setNavigationMessage('接近目的地：前方 20 米右側為 ' + dest.name);
     }, 4500);
 
     setTimeout(() => {
       setNavigationProgress(100);
       setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。');
+      // 以實際路線距離（使用者→泊位）累計騎乘里程，供減碳計算使用
+      if (onTripComplete) {
+        onTripComplete(haversineKm(USER_COORDINATES, { lat: dest.lat, lng: dest.lng }));
+      }
     }, 6000);
   };
 
@@ -551,7 +602,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     });
   };
 
-  const isSaved = savedParkingIds.includes(selectedSpot.id);
+  const isSaved = selectedSpot ? savedParkingIds.includes(selectedSpot.id) : false;
   const isKeyRegistered = Boolean(csdiKey) && csdiKey.trim() !== '' && csdiKey !== 'YOUR_API_KEY';
 
   return (
@@ -759,7 +810,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
               >
                 <Bike className="w-4 h-4 shrink-0" strokeWidth={2.5} />
                 <div className="flex flex-col flex-1">
-                  <span className="font-bold text-[11px]">官方單車徑與泊位</span>
+                  <span className="font-bold text-[11px]">官方單車徑路線（綠線疊加）</span>
                   <span className="text-[9px] text-zinc-400 font-bold leading-tight">
                     {cyclingStatus === 'loading'
                       ? '載入中…'
@@ -768,7 +819,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
                         : cyclingStatus === 'zoomout'
                           ? '請放大地圖以顯示'
                           : showCyclingData
-                            ? '資料來源：運輸署 (TD) / CSDI'
+                            ? '泊位已直接顯示；此開關控制單車徑路線'
                             : '已關閉'}
                   </span>
                 </div>
@@ -893,6 +944,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       <div id="map-info-card-container" className="absolute bottom-20 md:bottom-8 left-4 right-4 z-1000 max-w-sm mx-auto md:ml-4 md:mr-0 pointer-events-auto">
         <AnimatePresence mode="wait">
           {!isNavigating ? (
+            selectedSpot && (
             <motion.div
               key="spot-info"
               initial={{ opacity: 0, y: 20 }}
@@ -903,7 +955,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
               <div className="flex justify-between items-start">
                 <div>
                   <span className="text-[9px] bg-green-50 text-[#006b2c] border border-green-100 px-2 py-0.5 rounded font-black tracking-wider block w-max uppercase mb-1">
-                    {selectedSpot.id === 'parking-1' ? '推薦泊區' : '政府認可'}
+                    運輸署開放數據
                   </span>
                   <h3 className="text-sm font-black text-zinc-900 tracking-tight leading-tight">{selectedSpot.name}</h3>
                   <p className="text-[10px] text-zinc-400 mt-1 flex items-center font-bold">
@@ -911,16 +963,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
                     {selectedSpot.distance} • {selectedSpot.type}
                   </p>
                   <p className="text-[8px] text-zinc-400 font-bold mt-0.5 tracking-tight">
-                    © 香港地政總署授權空間數據
+                    © 運輸署 (TD) 單車資訊開放數據 / CSDI
                   </p>
                 </div>
                 <div className={`px-2.5 py-1 rounded-full flex items-center gap-1 border text-[10px] font-black ${
-                  selectedSpot.availableSlots === 0
-                    ? 'bg-rose-50 border-rose-100 text-rose-500 animate-pulse'
+                  selectedSpot.totalSlots === 0
+                    ? 'bg-rose-50 border-rose-100 text-rose-500'
                     : 'bg-green-50 border-green-100 text-[#006b2c]'
                 }`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                  <span>空位: {selectedSpot.availableSlots} / {selectedSpot.totalSlots}</span>
+                  <span>登記車位: {selectedSpot.totalSlots}</span>
                 </div>
               </div>
 
@@ -951,6 +1003,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
                 </button>
               </div>
             </motion.div>
+            )
           ) : (
             <motion.div
               key="navigating-panel"

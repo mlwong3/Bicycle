@@ -40,6 +40,12 @@ export default function App() {
     return saved ? parseInt(saved, 10) : 450;
   });
 
+  // 累計騎乘距離（公里）—— 供減碳計算使用（距離 × 官方排放係數）
+  const [totalDistanceKm, setTotalDistanceKm] = useState<number>(() => {
+    const saved = localStorage.getItem('hk_bike_total_distance_km');
+    return saved ? parseFloat(saved) : 0;
+  });
+
   const [currentTab, setCurrentTab] = useState<string>(() => {
     const saved = localStorage.getItem('hk_bike_current_active_tab');
     return saved || 'report'; // Preset to 'report' as requested by picture 1
@@ -74,6 +80,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('hk_bike_user_green_score', String(userScore));
   }, [userScore]);
+
+  useEffect(() => {
+    localStorage.setItem('hk_bike_total_distance_km', String(totalDistanceKm));
+  }, [totalDistanceKm]);
 
   useEffect(() => {
     localStorage.setItem('hk_bike_current_active_tab', currentTab);
@@ -117,6 +127,11 @@ export default function App() {
     setUserScore((prev) => prev + 50); // Award score for reporting
   };
 
+  const handleTripComplete = (distanceKm: number) => {
+    if (!Number.isFinite(distanceKm) || distanceKm <= 0) return;
+    setTotalDistanceKm((prev) => prev + distanceKm);
+  };
+
   const toggleSaveParking = (id: string) => {
     setSavedParkingIds((prev) => {
       if (prev.includes(id)) {
@@ -134,6 +149,7 @@ export default function App() {
     setReports(INITIAL_REPORTS);
     setSavedParkingIds(['parking-1']);
     setUserScore(450);
+    setTotalDistanceKm(0);
     setCurrentTab('report');
     setLanguage('zh');
   };
@@ -267,9 +283,10 @@ export default function App() {
               }`}
             >
               {currentTab === 'map' && (
-                <MapTab 
-                  savedParkingIds={savedParkingIds} 
-                  toggleSaveParking={toggleSaveParking} 
+                <MapTab
+                  savedParkingIds={savedParkingIds}
+                  toggleSaveParking={toggleSaveParking}
+                  onTripComplete={handleTripComplete}
                 />
               )}
               {currentTab === 'report' && (
@@ -284,11 +301,12 @@ export default function App() {
                 />
               )}
               {currentTab === 'personal' && (
-                <PersonalTab 
+                <PersonalTab
                   bikes={bikes}
                   reports={reports}
                   savedParkingCount={savedParkingIds.length}
                   userScore={userScore}
+                  totalDistanceKm={totalDistanceKm}
                   onUnbindBike={handleUnbindBike}
                   onNavigateToTab={handleSelectTab}
                   language={language}

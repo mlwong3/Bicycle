@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bike, Report } from '../types';
+import { carbonSaved, CAR_CO2_PER_KM } from '../carbon';
 import { 
   Plus, CheckCircle, AlertCircle, Trash2, Award, 
   MapPin, HelpCircle, ChevronRight, Bell, Languages, 
@@ -12,6 +13,7 @@ interface PersonalTabProps {
   reports: Report[];
   savedParkingCount: number;
   userScore: number;
+  totalDistanceKm: number;
   onUnbindBike: (id: string) => void;
   onNavigateToTab: (tab: string) => void;
   language: string;
@@ -23,6 +25,7 @@ export default function PersonalTab({
   reports,
   savedParkingCount,
   userScore,
+  totalDistanceKm,
   onUnbindBike,
   onNavigateToTab,
   language,
@@ -46,7 +49,8 @@ export default function PersonalTab({
   const pendingReportsCount = reports.filter(r => r.status === 'pending').length;
   const resolvedReportsCount = reports.filter(r => r.status === 'resolved').length;
 
-  const totalCarbonReduced = (12.5 + (reports.length - 3) * 0.5).toFixed(1);
+  // 減碳 = 累計騎乘距離 × 官方排放係數（取代原本捏造公式）
+  const totalCarbonReduced = carbonSaved(totalDistanceKm).toFixed(1);
 
   return (
     <div id="personaltab-root" className="px-5 space-y-6 pt-1 max-w-3xl mx-auto font-sans text-zinc-800 pb-24">
@@ -194,10 +198,17 @@ export default function PersonalTab({
             </div>
             <div className="z-10">
               <h4 id="bento-carbon-val" className="text-2xl font-black leading-none mb-1">{totalCarbonReduced} kg</h4>
-              <p className="text-[10px] text-white/85 font-semibold leading-relaxed">環保貢獻 (減碳數據)</p>
+              <p className="text-[10px] text-white/85 font-semibold leading-relaxed">
+                減碳 CO₂ · 騎乘 {totalDistanceKm.toFixed(1)} km
+              </p>
             </div>
           </div>
         </div>
+
+        {/* 減碳計算方法與出處（誠實註腳） */}
+        <p className="text-[10px] text-zinc-400 leading-relaxed px-1">
+          減碳 = 騎乘距離 × {CAR_CO2_PER_KM.toFixed(2)} kg CO₂/km（以單車取代汽車）。係數依香港《溫室氣體排放量計算工具》無鉛汽油 2.360 kg/L、市區油耗 8 L/100km 估算；僅計 CO₂，未含微量 CH₄/N₂O，屬保守估計。
+        </p>
       </section>
 
       {/* 4. Settings Card list buttons */}
