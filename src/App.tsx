@@ -146,9 +146,11 @@ export default function App() {
   };
 
   const handleTripComplete = (distanceKm: number) => {
+    // 防止異常或重複觸發造成減碳數據灌水：單次行程上限 50 公里（香港範圍內合理）
     if (!Number.isFinite(distanceKm) || distanceKm <= 0) return;
-    setTotalDistanceKm((prev) => prev + distanceKm);
-    void syncTrip(distanceKm);
+    const capped = Math.min(distanceKm, 50);
+    setTotalDistanceKm((prev) => prev + capped);
+    void syncTrip(capped);
   };
 
   const toggleSaveParking = (id: string) => {

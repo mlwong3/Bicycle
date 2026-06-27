@@ -410,8 +410,8 @@ export default function PersonalTab({
               <div className="space-y-2 bg-zinc-50 p-4 rounded-xl text-xs font-medium text-zinc-600 mb-5 border border-zinc-100">
                 <p>• <strong>登記名：</strong> {selectedBike.ownerName}</p>
                 <p>• <strong>車架號：</strong> {selectedBike.frameNo}</p>
-                <p>• <strong>感應金鑰：</strong> {selectedBike.nfcBound ? 'NFC-SEC-AA8281' : '未註冊'}</p>
-                <p>• <strong>最近定位：</strong> 沙田公園 (200米內)</p>
+                <p>• <strong>NFC 標籤編號：</strong> {selectedBike.nfcTagId || (selectedBike.nfcBound ? '已綁定' : '未綁定')}</p>
+                <p className="text-zinc-400">• <strong>最近定位：</strong> 沙田公園 (200米內)　<span className="text-[9px] bg-zinc-200 text-zinc-500 px-1.5 py-0.5 rounded font-bold">示範</span></p>
               </div>
 
               <div className="flex gap-2">

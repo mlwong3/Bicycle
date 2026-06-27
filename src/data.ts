@@ -1,21 +1,7 @@
 import { Bike, RecycleStation, EcoPartner, ParkingSpot, Report } from './types';
 
-export const INITIAL_BIKES: Bike[] = [
-  {
-    id: 'bike-1',
-    model: '城市通勤者',
-    frameNo: 'HK-CITY-88392',
-    ownerName: '單車愛好者',
-    nfcBound: true,
-  },
-  {
-    id: 'bike-2',
-    model: '週末探險家',
-    frameNo: 'HK-EXPL-22941',
-    ownerName: '單車愛好者',
-    nfcBound: false,
-  }
-];
+// 不再預設任何示範單車，使用者由 NFC 登記頁自行新增（資料同步至 Firestore）。
+export const INITIAL_BIKES: Bike[] = [];
 
 export const RECYCLE_STATIONS: RecycleStation[] = [
   {

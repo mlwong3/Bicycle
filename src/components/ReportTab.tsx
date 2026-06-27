@@ -199,7 +199,10 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
       {/* SECTION 2: Recycle stations */}
       <section id="section-recycle-stations" className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 id="recycle-section-title" className="text-lg font-bold text-zinc-900 tracking-tight">單車回收站</h2>
+          <h2 id="recycle-section-title" className="text-lg font-bold text-zinc-900 tracking-tight flex items-center gap-2">
+            單車回收站
+            <span className="text-[9px] bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded font-bold">示範資料</span>
+          </h2>
           <button
             id="recycle-showall-btn"
             onClick={() => setShowAllStations(true)}
@@ -248,7 +251,10 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
 
       {/* SECTION 3: Eco Partners */}
       <section id="section-eco-partners" className="space-y-3">
-        <h2 id="partners-section-title" className="text-lg font-bold text-zinc-900 tracking-tight">環保合作夥伴</h2>
+        <h2 id="partners-section-title" className="text-lg font-bold text-zinc-900 tracking-tight flex items-center gap-2">
+          環保合作夥伴
+          <span className="text-[9px] bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded font-bold">示範資料</span>
+        </h2>
         <div id="partners-list" className="space-y-4">
           {ECO_PARTNERS.map((partner) => (
             <div
