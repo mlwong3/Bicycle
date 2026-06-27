@@ -2,13 +2,25 @@ import type { FirebaseApp } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
 
+// Firebase 前端設定（apiKey 等屬可公開的客戶端設定，本就會出現在網頁 bundle，
+// 安全性由 Firestore 規則 + Auth 把關，非機密憑證）。
+// 優先使用建置環境的 VITE_FIREBASE_* 變數，未提供時回退到下方專案 bicycle-10499 的設定。
+const FALLBACK_FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAKNsu3GPW3l6CR6WuZAktNicDaXPRy6BQ',
+  authDomain: 'bicycle-10499.firebaseapp.com',
+  projectId: 'bicycle-10499',
+  storageBucket: 'bicycle-10499.firebasestorage.app',
+  messagingSenderId: '729712744526',
+  appId: '1:729712744526:web:288ae7cd8050f3fc090b1f',
+};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'bicycle-ee76c',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || FALLBACK_FIREBASE_CONFIG.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || FALLBACK_FIREBASE_CONFIG.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || FALLBACK_FIREBASE_CONFIG.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || FALLBACK_FIREBASE_CONFIG.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || FALLBACK_FIREBASE_CONFIG.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || FALLBACK_FIREBASE_CONFIG.appId,
 };
 
 export const isFirebaseConfigured =
