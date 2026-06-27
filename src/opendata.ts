@@ -22,6 +22,9 @@ export interface BBox {
   maxLat: number;
 }
 
+const CACHE_TTL_MS = 2 * 60 * 1000;
+const responseCache = new Map<string, { expiresAt: number; data: unknown }>();
+
 /**
  * 查詢指定圖層並回傳 GeoJSON（WGS84）。
  * 傳入 bbox 時只取與該範圍相交的要素，大幅減少傳輸量。
@@ -47,9 +50,16 @@ export async function fetchCyclingLayer(
   }
 
   const url = `${FEATURE_SERVER}/${layerId}/query?${params.toString()}`;
+  const cached = responseCache.get(url);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
   const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(`運輸署開放數據請求失敗 (HTTP ${res.status})`);
   }
-  return res.json();
+  const data = await res.json();
+  responseCache.set(url, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+  return data;
 }

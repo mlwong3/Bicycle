@@ -7,9 +7,10 @@ import { Radio, ScanLine, CreditCard, ChevronRight, CheckCircle, ShieldAlert, Wi
 interface NfcTabProps {
   onAddBike: (newBike: Omit<Bike, 'id' | 'nfcBound'>) => void;
   onSwitchToTab: (tab: string) => void;
+  onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
-export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
+export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [model, setModel] = useState('');
   const [frameNo, setFrameNo] = useState('');
@@ -19,6 +20,10 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
   const [writing, setWriting] = useState(false);
   const [nfcMode, setNfcMode] = useState<'real' | 'sim'>('sim');
+  const [nfcTagId, setNfcTagId] = useState('QJ-NFC-DEMO');
+
+  const createDemoTagId = (value: string) =>
+    `QJ-NFC-${value.trim().replace(/[^a-zA-Z0-9]/g, '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
 
   const startNfcScan = () => {
     setScanning(true);
@@ -31,24 +36,29 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
       
       // Auto fill mock data from physical tag!
       setModel('City Cruiser X1');
-      setFrameNo('HK-CCX-' + Math.floor(10000 + Math.random() * 90000));
+      const frame = 'HK-CCX-' + Math.floor(10000 + Math.random() * 90000);
+      setFrameNo(frame);
+      setNfcTagId(createDemoTagId(frame));
       setOwnerName('單車愛好者');
     }, 1800);
   };
 
   const handleQrScanMock = () => {
-    alert('正在啟動相機掃描單車 QR Code / 條形碼...');
-    setFrameNo('HK-FRAME-' + Math.floor(10000 + Math.random() * 90000));
+    const frame = 'HK-FRAME-' + Math.floor(10000 + Math.random() * 90000);
+    setFrameNo(frame);
+    setNfcTagId(createDemoTagId(frame));
+    onNotify('已以 QR / 條碼模擬方式填入車架編號。', 'info');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!model.trim() || !frameNo.trim() || !ownerName.trim()) {
-      alert('請填寫所有欄位資料！');
+      onNotify('請先填寫單車型號、車架編號及車主姓名。', 'warning');
       return;
     }
 
-    const newBike = { model, frameNo, ownerName };
+    const tagId = nfcTagId || createDemoTagId(frameNo);
+    const newBike = { model, frameNo, ownerName, nfcTagId: tagId };
     setStep(3);
     setWriting(true);
 
@@ -56,10 +66,12 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
       // 嘗試真實 NFC 寫入（需 Android Chrome 89+、HTTPS、使用者手勢）
       await writeBikeTag(newBike);
       setNfcMode('real');
+      onNotify('NFC 標籤已完成實體寫入。', 'success');
     } catch (err) {
       // 不支援或寫入失敗 → 退回原本的模擬流程
       await new Promise((resolve) => setTimeout(resolve, 1200));
       setNfcMode('sim');
+      onNotify('此裝置未完成真 NFC 寫入，已使用模擬流程保留展示效果。', 'warning');
     }
 
     onAddBike(newBike);
@@ -263,7 +275,7 @@ export default function NfcTab({ onAddBike, onSwitchToTab }: NfcTabProps) {
               <div className="bg-zinc-50 p-3 rounded-xl text-xs text-zinc-500 mb-6 text-left space-y-1 my-2">
                 <p>• <strong>車架號：</strong> {frameNo}</p>
                 <p>• <strong>持有者：</strong> {ownerName}</p>
-                <p>• <strong>NFC 感應編碼：</strong> RFID-TAG-X998</p>
+                <p>• <strong>NFC 感應編碼：</strong> {nfcTagId}</p>
               </div>
 
               <button

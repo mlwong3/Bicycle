@@ -6,9 +6,10 @@ import { Camera, MapPin, Send, ChevronRight, Star, Info, X, Phone, CheckCircle, 
 
 interface ReportTabProps {
   onAddReport: (newReport: Omit<Report, 'id' | 'status' | 'date'>) => void;
+  onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
-export default function ReportTab({ onAddReport }: ReportTabProps) {
+export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
   const [desc, setDesc] = useState('');
   const [locationStr, setLocationStr] = useState('香港仔海傍道 12 號');
   const [isLocating, setIsLocating] = useState(false);
@@ -70,7 +71,7 @@ export default function ReportTab({ onAddReport }: ReportTabProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!desc.trim()) {
-      alert('請填寫詳細描述！');
+      onNotify('請填寫詳細描述後再提交舉報。', 'warning');
       return;
     }
 
@@ -86,6 +87,7 @@ export default function ReportTab({ onAddReport }: ReportTabProps) {
       setIsSubmitSuccess(true);
       setDesc('');
       setImgUrl(null);
+      onNotify('舉報已提交，並已加入待核紀錄。', 'success');
     }, 1200);
   };
 
@@ -334,7 +336,7 @@ export default function ReportTab({ onAddReport }: ReportTabProps) {
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    alert(`正在模擬致電至 ${selectedStation.name} （${selectedStation.contactNo}）`);
+                    onNotify(`已準備聯絡 ${selectedStation.name}（${selectedStation.contactNo}）。`, 'info');
                     setSelectedStation(null);
                   }}
                   className="flex-1 bg-[#006b2c] hover:bg-[#005320] text-white py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer"
@@ -406,7 +408,7 @@ export default function ReportTab({ onAddReport }: ReportTabProps) {
               <div className="flex gap-2.5 mt-5 pt-3 border-t border-zinc-100">
                 <button
                   onClick={() => {
-                    alert(`導航路徑已規劃，正為您前往： ${selectedPartner.name}`);
+                    onNotify(`已規劃前往 ${selectedPartner.name} 的示範路線。`, 'success');
                     setSelectedPartner(null);
                   }}
                   className="flex-1 bg-[#006b2c] hover:bg-[#005320] text-white py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"

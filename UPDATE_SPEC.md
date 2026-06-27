@@ -1,0 +1,234 @@
+# 單車管理 — 更新記錄、實作規劃與待辦工作
+
+> 本文件記錄專案的更新歷程、後續實作規劃與尚待完成的工作。
+> 專案：mlwong3/Bicycle ・ Firebase：bicycle-ee76c ・ 最後更新：2026-06-27
+
+---
+
+## 一、更新記錄（Changelog）
+
+### 2026-06-27
+
+| # | 項目 | 內容 | 狀態 |
+|---|------|------|------|
+| 0 | 工程文件 | 分析整個專案結構，產生 `ENGINEERING.md`（架構、技術棧、各模組說明） | ✅ 完成 |
+| 1 | 修復 GitHub Pages 空白畫面 | 診斷出 `main.tsx 404`：Pages 直接放原始碼而非編譯產物。`vite.config.ts` 加 `base: './'`、新增 `.github/workflows/deploy.yml` 自動 build+部署 | ✅ 完成（待刪 static.yml） |
+| 2 | 減碳計算改用官方係數 | 新增 `src/carbon.ts`（無鉛汽油 2.360 kg/L × 市區油耗 8 L/100km ≈ 0.19 kg/km）。`App.tsx` 累計實際騎乘距離並持久化；`PersonalTab` 改以「距離 × 官方係數」顯示，附出處與保守估計註腳。取代原捏造公式 | ✅ 完成 |
+| 3 | 加入真實 Web NFC | 新增 `src/nfc.ts`（`NDEFReader` 讀寫）。`NfcTab` 提交時嘗試真 NFC 寫入，不支援即退回模擬，並標示本次為實體寫入或模擬。順手修正成功彈窗 `py-32` 過大按鈕 bug | ✅ 完成 |
+| 4 | 載入運輸署單車開放數據 | 新增 `src/opendata.ts` 存取 CSDI ArcGIS FeatureServer（`outSR=4326`+`f=geojson`）。決定採線上 API（非本地 GML/FGDB）。`MapTab` 以 `L.geoJSON` 疊加官方單車徑（綠線） | ✅ 完成 |
+| 5 | 地圖改用真實泊位、移除假資料 | `MapTab` 將原本 24 個捏造泊位換成運輸署開放數據泊位作為主要標記；資訊卡改顯示「登記車位數、擁有者、實際距離」等真實屬性；依 bbox 在 `moveend` 載入，API 失敗退回種子資料 | ✅ 完成 |
+| 6 | Firebase Hosting 部署設定 | 新增 `firebase.json`、`.firebaserc`、`.github/workflows/firebase-deploy.yml`（專案 `bicycle-ee76c`）、`DEPLOY_FIREBASE.md` 指引。選定 Firebase Hosting + GitHub Actions 自動部署 | ✅ 設定完成（待最終驗證） |
+| 7 | 輕量 Firebase 後端及程式碼改進 | 採用 Firebase Authentication 匿名登入 + Firestore 作輕量後端，新增 `src/firebase.ts`、`src/backend.ts`、`.env.example`、Firestore 規則；保留 localStorage fallback。完成開放數據快取 / 節流、安全 storage 版本化、App 內通知取代 `alert()`、README / metadata / title 更新 | ✅ 完成（待部署驗證） |
+
+> 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit。
+
+---
+
+## 二、待完成工作（To-Do）
+
+### A. 下一階段優先工作：NFC 實物展示
+- [ ] **製作 NFC 貼紙 + 展示卡**：以比賽展示為目標，先製作 3-5 套可穩定示範的 NFC 標籤與展示卡。
+- [ ] **建立 NFC 登記表**：記錄 `tagId`、`bikeId`、`frameNo`、車款、寫入日期、測試狀態及備註。
+- [ ] **完成 Android Chrome 真 NFC 測試**：以 HTTPS 網址測試實體寫入及讀取流程。
+- [ ] **準備 iPhone / 桌面 fallback**：以 QR Code 或 App 內模擬流程展示，避免現場因裝置不支援 Web NFC 而中斷。
+
+### B. 部署相關（優先）
+- [ ] **將最新 commit 推上 GitHub `main`**（含開放數據泊位、減碳、NFC、Firebase 設定）。推送後 Firebase 會自動重新部署。
+- [ ] **刪除 `.github/workflows/static.yml`**：它把原始碼根目錄當網站上傳，導致 GitHub Pages 一直空白（`main.tsx 404`）。刪掉後 Pages 才會用 `deploy.yml` 的編譯產物。
+- [ ] **確認 Firebase 部署成功**：Actions 的 `Deploy to Firebase Hosting` 綠勾，網址 `https://bicycle-ee76c.web.app`。
+- [ ] （選用）設定「自動更新 GitHub」：需一組 GitHub 細粒度權杖（fine-grained PAT，限 Bicycle repo、Contents 讀寫）以便由工具直接 `git push`。
+
+### C. 功能完善
+- [ ] **NFC 私隱改善**：NFC 標籤只寫入 `tagId`、`bikeId`、`frameNo`、App URL，不寫入真實學生姓名或個人資料。
+- [ ] **NFC 錯誤狀態改善**：區分「真 NFC 成功」、「裝置不支援」及「寫入失敗」，不把所有失敗都顯示成模擬成功。
+- [ ] **地圖模組拆分**：`MapTab.tsx` 體積過大，待拆成地圖初始化、開放數據載入、控制面板及泊位資訊卡等子模組。
+- [x] **地圖資料快取**：為運輸署開放數據加入簡單快取或節流，減少 `moveend` 重複請求。
+- [x] **localStorage 版本化與容錯**：讀寫加入 `try/catch`、key 加版本，並把重設功能改為只清除本 App 的 key。
+- [x] **移除 `alert()`**：改用 App 內 toast / modal，提升比賽展示時的專業感。
+- [ ] **「收藏路線」仍寫死為 12**（`PersonalTab.tsx`），未與真實狀態連動，待改為真實數據或移除。
+- [ ] **i18n 未完成**：語言狀態 `zh/en` 已存在，但切換 en 後大部分文案仍為中文，待補文案字典。
+- [ ] 單車徑（CYCTRACK）與斜道（CYCRAMP）目前只疊加單車徑；可評估是否加入斜道圖層。
+- [ ] 開放數據在縮放 < 13 時不載入（效能保護），可評估加入「載入此區域」按鈕。
+
+### D. 清理與文件
+- [ ] **移除未使用相依**：`@google/genai`、`@vis.gl/react-google-maps`、`@types/google.maps`、`express`、`dotenv`（AI Studio 樣板殘留，見 `ENGINEERING.md`）。
+- [x] **更新樣板文字**：`index.html` 的 `<title>` 仍為「My Google AI Studio App」；`README.md` 仍提 Gemini；`metadata.json` 宣告未實作的 Gemini 能力。
+- [ ] **處理 GitHub 與本機分支分歧**：以最新版內容為準，補回 `UPDATE_SPEC.md` 到遠端，確保規格文件可在 GitHub 查閱。
+- [ ] 上傳文件檔（`ENGINEERING.md`、`UPDATE_SPEC.md`、`DEPLOY_FIREBASE.md`）作為比賽開發紀錄（非必要，但加分）。
+
+---
+
+## 三、技術參考（實作重點與出處）
+
+### 減碳計算
+- 出處：香港《溫室氣體排放量計算工具》(2024, C02/24)，無鉛汽油 = 2.360 kg CO₂/公升。
+- 公式：`每公里碳排 = (油耗 L/100km ÷ 100) × 2.360`；以 8 L/100km 計 ≈ 0.19 kg/km。
+- 誠實註腳：僅計 CO₂（未含 CH₄/N₂O，偏保守）；油耗為假設值，正式版宜引用來源或讓使用者選車型。
+
+### Web NFC
+- API：`NDEFReader`（`write` / `scan`+`onreading`）。
+- 限制：僅 Android Chrome 89+、需 HTTPS、需使用者手勢；iOS/桌面不支援 → 退回模擬。
+
+### 開放數據（運輸署單車資訊）
+- 資料集：https://data.gov.hk/tc-data/dataset/hk-td-tis_20-cycling-information
+- 端點：`https://portal.csdi.gov.hk/server/rest/services/common/td_rcd_1629267205229_68005/FeatureServer`
+- 圖層：0 = CYCPARKSPACE（泊位）、1 = CYCRAMP（斜道）、2 = CYCTRACK（單車徑）。
+- 查詢：`/{layer}/query?where=1=1&outFields=*&outSR=4326&f=geojson`（可加 envelope 做 bbox 過濾）。
+- 已驗證：回傳 WGS84 GeoJSON、允許瀏覽器 CORS。本地 `Data/` 內 GML/KMZ/FGDB 僅作離線備援，不上傳。
+
+### 部署
+- GitHub Pages：`deploy.yml`，Source 需設「GitHub Actions」，並刪除衝突的 `static.yml`。
+- Firebase Hosting：`firebase.json`（public=`dist`）+ `firebase-deploy.yml`（`FirebaseExtended/action-hosting-deploy`，secret `FIREBASE_SERVICE_ACCOUNT`，projectId `bicycle-ee76c`）。兩者為獨立目標，可同時上線。
+
+---
+
+## 四、NFC 卡片製作規劃
+
+### 4.1 目標與定位
+
+- **目標**：以比賽展示為優先，先完成少量可穩定示範的 NFC 實物。
+- **形式**：採用「NFC 貼紙 + 展示卡」組合。
+- **展示重點**：讓評審清楚看到「單車實物標籤」、「手機 NFC 寫入 / 讀取」、「App 登記資料」三者之間的關係。
+- **私隱原則**：NFC 標籤只存最少識別資料，不寫入真實學生姓名、電話或其他個人資料。
+
+### 4.2 物料清單
+
+| 物料 | 建議規格 | 用途 | 備註 |
+|------|----------|------|------|
+| NFC 貼紙 | NTAG213 或 NTAG215、13.56MHz、NDEF | 貼在單車模型、車架或展示板上 | 先購買 10-20 張，方便測試及備用 |
+| 展示卡 | A6、名片大小膠卡或過膠紙卡 | 印上作品名稱、車架編號、QR Code 及使用提示 | 與 NFC 貼紙配成一套展示件 |
+| QR Code | 指向 App 網址或示範登記頁 | 作為 iPhone / 桌面 fallback | 避免現場裝置不支援 Web NFC |
+| 防金屬 NFC 標籤 | anti-metal NFC tag | 若要直接貼在真單車金屬車架 | 成本較高，作進階測試用途 |
+| 登記表 | Google Sheet 或 Excel | 記錄標籤編號、測試狀態及備註 | 方便比賽展示及管理 |
+
+### 4.3 NFC 資料設計
+
+NFC 標籤建議只寫入以下最少資料：
+
+```json
+{
+  "tagId": "QJ-NFC-001",
+  "bikeId": "bike-demo-001",
+  "frameNo": "HK-QJ-0001",
+  "appUrl": "https://bicycle-ee76c.web.app"
+}
+```
+
+不應寫入：
+
+- 真實學生姓名
+- 電話號碼
+- 身份證明資料
+- 住址或精確個人位置
+- 任何不需要公開讀取的個人資料
+
+如需在 App 內顯示車主，可由 App 本地資料或後端資料庫以 `bikeId` 對應，不應直接依賴 NFC 內的個人資料。
+
+### 4.4 展示卡版面建議
+
+| 位置 | 內容 |
+|------|------|
+| 正面標題 | 騎跡 Bike Trace |
+| 正面主視覺 | NFC 圖示、單車圖示、作品主色 |
+| 正面資料 | 車架編號、NFC 標籤編號、感應提示 |
+| 正面提示 | 「請以 Android Chrome 靠近 NFC 貼紙」 |
+| 背面說明 | Web NFC 技術、私隱設計、QR fallback |
+| 背面 QR Code | App 網址或示範頁 |
+
+建議展示文字：
+
+> 此 NFC 標籤只儲存單車識別編號，不儲存個人敏感資料。Android Chrome 可使用 Web NFC 讀寫；iPhone 或桌面裝置可使用 QR Code 或模擬模式展示。
+
+### 4.5 寫卡流程
+
+1. 使用 NFC Tools 或同類工具先清空 / 格式化 NFC 貼紙為 NDEF。
+2. 在登記表建立標籤資料，例如 `QJ-NFC-001`。
+3. 使用 Android 手機開啟 HTTPS 版 App。
+4. 進入 NFC 登記頁，輸入示範車款、車架編號及示範車主。
+5. 將手機靠近 NFC 貼紙，完成 Web NFC 寫入。
+6. 寫入後立即用 App 或 NFC Tools 讀取，確認資料正確。
+7. 在登記表更新測試狀態：`未寫入`、`已寫入`、`已讀取驗證`、`需重寫`。
+8. 將 NFC 貼紙貼到單車模型、真單車指定位置或展示板，並與展示卡配對。
+
+### 4.6 現場展示流程
+
+| 步驟 | 展示內容 | 成功準則 |
+|------|----------|----------|
+| 1 | 展示 NFC 貼紙及展示卡 | 評審可理解卡片與單車的對應關係 |
+| 2 | Android Chrome 靠近 NFC 貼紙 | App 能顯示真 NFC 寫入 / 讀取流程 |
+| 3 | App 顯示單車登記資料 | 車架編號與展示卡一致 |
+| 4 | 個人中心顯示 NFC 已綁定 | 能看到已登記單車及防盜狀態 |
+| 5 | iPhone / 桌面 fallback | 可用 QR Code 或模擬流程繼續展示 |
+
+---
+
+## 五、程式碼改進規劃
+
+### 5.1 NFC 與私隱
+
+- 將 NFC 寫入內容改為最少資料，只保留 `tagId`、`bikeId`、`frameNo`、`appUrl`。
+- `ownerName` 只保留於 App 內展示資料，不寫入 NFC 標籤。
+- 新增 NFC 讀取驗證流程，讓使用者可掃描標籤後確認單車是否已登記。
+- 將 NFC 結果狀態拆分為：
+  - 真 NFC 寫入成功
+  - 裝置不支援 Web NFC
+  - 寫入失敗
+  - 模擬流程完成
+- 錯誤時顯示清楚原因，不應一律當作模擬成功。
+
+### 5.2 地圖與開放數據
+
+- 拆分 `MapTab.tsx`，降低單一檔案複雜度。（待後續 refactor）
+- 建議拆分方向：
+  - 地圖初始化與底圖切換
+  - 運輸署開放數據載入
+  - 泊位標記與資訊卡
+  - CSDI / WMS 控制面板
+  - 導航狀態與路線顯示
+- 為運輸署 API 查詢加入簡單快取或節流，避免拖動地圖時過度請求。（已完成：2 分鐘快取 + `moveend` 延遲載入）
+- 為 API 失敗、低縮放比例、無資料區域加入更清楚的狀態提示。
+- 評估加入「載入此區域」按鈕，讓使用者主動載入大量資料。
+
+### 5.3 localStorage 與資料可靠性
+
+- localStorage 讀寫全部加入 `try/catch`。（已完成）
+- key 加版本，例如 `hk_bike:v2:registered_list`，方便日後資料遷移。（已完成）
+- `localStorage.clear()` 改為只清除本 App 使用的 key，避免影響同網域其他資料。（已完成）
+- JSON 解析失敗時回復預設資料，避免白畫面。（已完成）
+- 資料 ID 改用 `crypto.randomUUID()`，取代 `Math.random()`。（已完成於 App 主要資料 ID）
+
+### 5.4 UI 與展示體驗
+
+- 移除 `alert()`，改用 App 內 toast、modal 或 inline message。（已完成）
+- 「收藏路線 12」改為真實資料，或標示為示範數據。
+- 完成英文文案字典，或暫時移除英文切換，避免切換後中英文不一致。
+- NFC 登記頁加入「此裝置是否支援 Web NFC」的明確提示。
+- 更新成功彈窗內容，清楚標示本次是真 NFC、QR fallback 還是模擬流程。
+
+### 5.5 文件與部署
+
+- 更新 `README.md`，移除 Gemini / AI Studio 樣板文字，改為騎跡專案說明。（已完成）
+- 更新 `metadata.json`，移除未實作的 Gemini 能力宣告。（已完成）
+- 更新 `index.html` title，改為「騎跡 Bike Trace」或正式作品名稱。（已完成）
+- 新增 Firebase 輕量後端設定、`.env.example`、Firestore rules / indexes，並以匿名登入保護使用者各自資料。（已完成）
+- 處理 GitHub 與本機分支分歧，確保 `UPDATE_SPEC.md`、`ENGINEERING.md`、`DEPLOY_FIREBASE.md` 可在 GitHub 查閱。
+- 確認 GitHub Pages 與 Firebase Hosting 兩條部署線均可正常建置。
+
+---
+
+## 六、後續實作優次建議
+
+| 優次 | 工作 | 原因 | 驗收標準 |
+|------|------|------|----------|
+| P0 | 製作 3-5 套 NFC 貼紙 + 展示卡 | 直接影響比賽現場展示 | Android Chrome 可成功寫入及讀取；iPhone / 桌面有 fallback |
+| P0 | NFC 私隱改造 | 避免把個人資料寫入可公開讀取的 NFC 標籤 | NFC payload 不含真實姓名或敏感資料 |
+| P1 | 補回 `UPDATE_SPEC.md` 到 GitHub | 讓規格文件成為遠端可追蹤依據 | GitHub repo 可看到最新版文件 |
+| P1 | 移除 `alert()` 並改善錯誤狀態 | 提升展示專業度 | 所有主要流程錯誤以 App 內 UI 顯示 |
+| P1 | localStorage 容錯與版本化 | 避免資料損壞造成白畫面 | 損壞儲存資料後 App 仍可啟動 |
+| P2 | 拆分 `MapTab.tsx` | 降低維護成本 | 地圖功能拆成清晰模組，行為維持不變 |
+| P2 | 更新 README / metadata / title | 提升作品完整度 | 文件與瀏覽器標題均改為騎跡專案 |
+| P3 | 完成 i18n 或移除英文切換 | 避免展示時文案不一致 | 切換語言後文案一致，或只保留繁體中文 |
+
+---
+
+*更新本文件時，請於「更新記錄」新增日期條目，並同步勾選/移動「待完成工作」項目。*

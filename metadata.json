@@ -1,6 +1,6 @@
 {
-  "name": "單車管理",
-  "description": "一站式智能單車管理應用，支援地圖泊位導航、違規舉報與回收、智能 NFC 登記、及個人單車與環保數據追蹤。",
+  "name": "騎跡 Bike Trace",
+  "description": "香港智能單車管理與綠色出行展示應用，支援運輸署開放數據地圖、違規舉報、NFC 登記、Firebase 輕量後端同步及減碳數據追蹤。",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

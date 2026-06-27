@@ -4,6 +4,7 @@ export interface Bike {
   frameNo: string;
   ownerName: string;
   nfcBound: boolean;
+  nfcTagId?: string;
 }
 
 export interface Report {

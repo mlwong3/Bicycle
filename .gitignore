@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+server.js
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+*.log
+
+# os / editor
+.DS_Store
+.vscode/
+.idea/
+
+# claude code local
+.claude/
+
+# firebase
+.firebase/
+firebase-debug.log
+
+# 本地 GIS 開放數據備援檔（改用線上 API，不上傳）
+Data/

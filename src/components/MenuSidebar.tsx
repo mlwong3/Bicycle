@@ -7,9 +7,10 @@ interface MenuSidebarProps {
   activeTab: string;
   onSelectTab: (tab: string) => void;
   userScore: number;
+  onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
-export default function MenuSidebar({ isOpen, onClose, activeTab, onSelectTab, userScore }: MenuSidebarProps) {
+export default function MenuSidebar({ isOpen, onClose, activeTab, onSelectTab, userScore, onNotify }: MenuSidebarProps) {
   if (!isOpen) return null;
 
   const menuItems = [
@@ -96,14 +97,15 @@ export default function MenuSidebar({ isOpen, onClose, activeTab, onSelectTab, u
         {/* Footer info inside menu */}
         <div className="pt-4 border-t border-zinc-100 flex flex-col gap-2.5 text-[10px] text-zinc-400 font-bold">
           <button onClick={() => {
-            alert('正分享「單車管理」App！連結已複製到剪貼簿。');
-            navigator.clipboard.writeText(window.location.href);
+            navigator.clipboard.writeText(window.location.href)
+              .then(() => onNotify('應用程式連結已複製。', 'success'))
+              .catch(() => onNotify('未能複製連結，請手動複製網址。', 'warning'));
           }} className="flex items-center gap-2 hover:text-[#006b2c] transition-colors text-left cursor-pointer">
             <Share2 className="w-4 h-4 text-zinc-400" />
             <span>分享應用程式</span>
           </button>
           <button onClick={() => {
-            alert('本系統為香港單車同盟所主辦之智能單車整合管理範本。');
+            onNotify('騎跡是智能單車管理及綠色出行展示原型。', 'info');
           }} className="flex items-center gap-2 hover:text-[#006b2c] transition-colors text-left cursor-pointer">
             <HelpCircle className="w-4 h-4 text-zinc-400" />
             <span>系統說明</span>

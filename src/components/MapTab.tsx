@@ -4,6 +4,7 @@ import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { haversineKm } from '../carbon';
+import { readStoredJson, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from '../storage';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -101,7 +102,7 @@ const WMS_SERVICES = [
 export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateStart, onTripComplete }: MapTabProps) {
   // Try retrieving the CSDI API key from the environment or LocalStorage (for dynamic user overrides)
   const [csdiKey, setCsdiKey] = useState<string>(() => {
-    const saved = localStorage.getItem('HK_CSDI_API_KEY');
+    const saved = readStoredString(STORAGE_KEYS.csdiApiKey, '', ['HK_CSDI_API_KEY']);
     if (saved) return saved;
     return process.env.CSDI_API_KEY || (import.meta as any).env?.VITE_CSDI_API_KEY || '';
   });
@@ -119,24 +120,22 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
 
   // Enabled OGC WMS overlays state
   const [enabledWmsLayers, setEnabledWmsLayers] = useState<string[]>(() => {
-    const saved = localStorage.getItem('HK_BIKE_ENABLED_WMS_LAYERS');
-    return saved ? JSON.parse(saved) : ['buildings', 'transportation']; // Default enable buildings and transport
+    return readStoredJson(STORAGE_KEYS.enabledWmsLayers, ['buildings', 'transportation'], ['HK_BIKE_ENABLED_WMS_LAYERS']);
   });
 
   // Persist WMS choices
   useEffect(() => {
-    localStorage.setItem('HK_BIKE_ENABLED_WMS_LAYERS', JSON.stringify(enabledWmsLayers));
+    writeStoredJson(STORAGE_KEYS.enabledWmsLayers, enabledWmsLayers);
   }, [enabledWmsLayers]);
 
   // 運輸署官方單車開放數據（CSDI ArcGIS REST）疊加開關
   const [showCyclingData, setShowCyclingData] = useState<boolean>(() => {
-    const saved = localStorage.getItem('HK_BIKE_SHOW_CYCLING_DATA');
-    return saved ? saved === 'true' : true; // 預設開啟
+    return readStoredString(STORAGE_KEYS.showCyclingData, 'true', ['HK_BIKE_SHOW_CYCLING_DATA']) === 'true';
   });
   const [cyclingStatus, setCyclingStatus] = useState<'idle' | 'loading' | 'ok' | 'error' | 'zoomout'>('idle');
 
   useEffect(() => {
-    localStorage.setItem('HK_BIKE_SHOW_CYCLING_DATA', String(showCyclingData));
+    writeStoredString(STORAGE_KEYS.showCyclingData, String(showCyclingData));
   }, [showCyclingData]);
   
   // Map themes supported:
@@ -168,7 +167,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const saveCsdiKey = (key: string) => {
     const trimmed = key.trim();
     setCsdiKey(trimmed);
-    localStorage.setItem('HK_CSDI_API_KEY', trimmed);
+    writeStoredString(STORAGE_KEYS.csdiApiKey, trimmed);
     if (trimmed) {
       setMapTheme('csdi-topographic');
     } else {
@@ -490,11 +489,18 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       }
     };
 
+    let loadTimer: number | undefined;
+    const scheduleLoad = () => {
+      window.clearTimeout(loadTimer);
+      loadTimer = window.setTimeout(load, 350);
+    };
+
     load();
-    map.on('moveend', load);
+    map.on('moveend', scheduleLoad);
     return () => {
       cancelled = true;
-      map.off('moveend', load);
+      window.clearTimeout(loadTimer);
+      map.off('moveend', scheduleLoad);
       cyclingAbortRef.current?.abort();
     };
   }, [showCyclingData]);
@@ -542,11 +548,18 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       }
     };
 
+    let loadTimer: number | undefined;
+    const scheduleParkingLoad = () => {
+      window.clearTimeout(loadTimer);
+      loadTimer = window.setTimeout(loadParking, 350);
+    };
+
     loadParking();
-    map.on('moveend', loadParking);
+    map.on('moveend', scheduleParkingLoad);
     return () => {
       cancelled = true;
-      map.off('moveend', loadParking);
+      window.clearTimeout(loadTimer);
+      map.off('moveend', scheduleParkingLoad);
       parkingAbortRef.current?.abort();
     };
   }, []);

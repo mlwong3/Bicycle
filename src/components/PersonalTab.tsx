@@ -18,6 +18,7 @@ interface PersonalTabProps {
   onNavigateToTab: (tab: string) => void;
   language: string;
   onChangeLanguage: (lang: string) => void;
+  onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
 export default function PersonalTab({
@@ -29,7 +30,8 @@ export default function PersonalTab({
   onUnbindBike,
   onNavigateToTab,
   language,
-  onChangeLanguage
+  onChangeLanguage,
+  onNotify
 }: PersonalTabProps) {
   const [selectedBike, setSelectedBike] = useState<Bike | null>(null);
   
@@ -484,7 +486,7 @@ export default function PersonalTab({
                   <button
                     onClick={() => {
                       if (!helpFeedback.trim()) {
-                        alert('請填寫反映意見內容！');
+                        onNotify('請先填寫反映意見內容。', 'warning');
                         return;
                       }
                       setFeedbackSent(true);

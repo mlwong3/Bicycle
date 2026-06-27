@@ -12,85 +12,104 @@ import MenuSidebar from './components/MenuSidebar';
 import SettingsModal from './components/SettingsModal';
 
 import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
+import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
+import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncTrip } from './backend';
+
+type NoticeTone = 'success' | 'info' | 'warning' | 'error';
+interface Notice {
+  id: number;
+  message: string;
+  tone: NoticeTone;
+}
+
+function createId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export default function App() {
   // --- LocalStorage Initialization ---
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(() => {
-    const saved = localStorage.getItem('hk_bike_onboarding_done');
-    return saved === 'true';
+    return readStoredString(STORAGE_KEYS.onboardingDone, 'false', ['hk_bike_onboarding_done']) === 'true';
   });
 
   const [bikes, setBikes] = useState<Bike[]>(() => {
-    const saved = localStorage.getItem('hk_bike_registered_list');
-    return saved ? JSON.parse(saved) : INITIAL_BIKES;
+    return readStoredJson(STORAGE_KEYS.bikes, INITIAL_BIKES, ['hk_bike_registered_list']);
   });
 
   const [reports, setReports] = useState<Report[]>(() => {
-    const saved = localStorage.getItem('hk_bike_reports_history');
-    return saved ? JSON.parse(saved) : INITIAL_REPORTS;
+    return readStoredJson(STORAGE_KEYS.reports, INITIAL_REPORTS, ['hk_bike_reports_history']);
   });
 
   const [savedParkingIds, setSavedParkingIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('hk_bike_saved_parking_spots');
-    return saved ? JSON.parse(saved) : ['parking-1']; // Preset park-1 saved
+    return readStoredJson(STORAGE_KEYS.savedParkingIds, ['parking-1'], ['hk_bike_saved_parking_spots']);
   });
 
   const [userScore, setUserScore] = useState<number>(() => {
-    const saved = localStorage.getItem('hk_bike_user_green_score');
-    return saved ? parseInt(saved, 10) : 450;
+    return readStoredNumber(STORAGE_KEYS.userScore, 450, ['hk_bike_user_green_score']);
   });
 
   // 累計騎乘距離（公里）—— 供減碳計算使用（距離 × 官方排放係數）
   const [totalDistanceKm, setTotalDistanceKm] = useState<number>(() => {
-    const saved = localStorage.getItem('hk_bike_total_distance_km');
-    return saved ? parseFloat(saved) : 0;
+    return readStoredNumber(STORAGE_KEYS.totalDistanceKm, 0, ['hk_bike_total_distance_km']);
   });
 
   const [currentTab, setCurrentTab] = useState<string>(() => {
-    const saved = localStorage.getItem('hk_bike_current_active_tab');
-    return saved || 'report'; // Preset to 'report' as requested by picture 1
+    return readStoredString(STORAGE_KEYS.currentTab, 'report', ['hk_bike_current_active_tab']);
   });
 
   const [language, setLanguage] = useState<string>(() => {
-    const saved = localStorage.getItem('hk_bike_display_language');
-    return saved || 'zh';
+    return readStoredString(STORAGE_KEYS.language, 'zh', ['hk_bike_display_language']);
   });
 
   // --- Sidebar & Settings states ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  const showNotice = (message: string, tone: NoticeTone = 'info') => {
+    setNotice({ id: Date.now(), message, tone });
+  };
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   // --- Persist state updates ---
   useEffect(() => {
-    localStorage.setItem('hk_bike_onboarding_done', String(hasCompletedOnboarding));
+    writeStoredString(STORAGE_KEYS.onboardingDone, String(hasCompletedOnboarding));
   }, [hasCompletedOnboarding]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_registered_list', JSON.stringify(bikes));
+    writeStoredJson(STORAGE_KEYS.bikes, bikes);
   }, [bikes]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_reports_history', JSON.stringify(reports));
+    writeStoredJson(STORAGE_KEYS.reports, reports);
   }, [reports]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_saved_parking_spots', JSON.stringify(savedParkingIds));
+    writeStoredJson(STORAGE_KEYS.savedParkingIds, savedParkingIds);
   }, [savedParkingIds]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_user_green_score', String(userScore));
+    writeStoredString(STORAGE_KEYS.userScore, String(userScore));
   }, [userScore]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_total_distance_km', String(totalDistanceKm));
+    writeStoredString(STORAGE_KEYS.totalDistanceKm, String(totalDistanceKm));
   }, [totalDistanceKm]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_current_active_tab', currentTab);
+    writeStoredString(STORAGE_KEYS.currentTab, currentTab);
   }, [currentTab]);
 
   useEffect(() => {
-    localStorage.setItem('hk_bike_display_language', language);
+    writeStoredString(STORAGE_KEYS.language, language);
   }, [language]);
 
   // --- Handlers ---
@@ -100,14 +119,18 @@ export default function App() {
 
   const handleAddBike = (newBikeData: Omit<Bike, 'id' | 'nfcBound'>) => {
     const newBike: Bike = {
-      id: 'bike-' + Math.random().toString(36).substring(2, 9),
+      id: createId('bike'),
       model: newBikeData.model,
       frameNo: newBikeData.frameNo,
       ownerName: newBikeData.ownerName,
-      nfcBound: true // Registered from NFC page are always bound
+      nfcBound: true,
+      nfcTagId: newBikeData.nfcTagId
     };
     setBikes((prev) => [newBike, ...prev]);
     setUserScore((prev) => prev + 50); // +50 scores award
+    void syncBikeRegistration(newBike).then(() => {
+      if (isCloudBackendEnabled()) showNotice('單車資料已同步至 Firebase。', 'success');
+    });
   };
 
   const handleUnbindBike = (id: string) => {
@@ -116,7 +139,7 @@ export default function App() {
 
   const handleAddReport = (newReportData: Omit<Report, 'id' | 'status' | 'date'>) => {
     const newReport: Report = {
-      id: 'report-' + Math.random().toString(36).substring(2, 9),
+      id: createId('report'),
       location: newReportData.location,
       description: newReportData.description,
       imageUrl: newReportData.imageUrl,
@@ -125,11 +148,15 @@ export default function App() {
     };
     setReports((prev) => [newReport, ...prev]);
     setUserScore((prev) => prev + 50); // Award score for reporting
+    void syncReport(newReport).then(() => {
+      if (isCloudBackendEnabled()) showNotice('舉報紀錄已同步至 Firebase。', 'success');
+    });
   };
 
   const handleTripComplete = (distanceKm: number) => {
     if (!Number.isFinite(distanceKm) || distanceKm <= 0) return;
     setTotalDistanceKm((prev) => prev + distanceKm);
+    void syncTrip(distanceKm);
   };
 
   const toggleSaveParking = (id: string) => {
@@ -143,7 +170,7 @@ export default function App() {
   };
 
   const handleResetApplication = () => {
-    localStorage.clear();
+    clearAppStorage();
     setHasCompletedOnboarding(false);
     setBikes(INITIAL_BIKES);
     setReports(INITIAL_REPORTS);
@@ -292,12 +319,14 @@ export default function App() {
               {currentTab === 'report' && (
                 <ReportTab 
                   onAddReport={handleAddReport} 
+                  onNotify={showNotice}
                 />
               )}
               {currentTab === 'nfc' && (
                 <NfcTab 
                   onAddBike={handleAddBike} 
                   onSwitchToTab={handleSelectTab} 
+                  onNotify={showNotice}
                 />
               )}
               {currentTab === 'personal' && (
@@ -311,6 +340,7 @@ export default function App() {
                   onNavigateToTab={handleSelectTab}
                   language={language}
                   onChangeLanguage={setLanguage}
+                  onNotify={showNotice}
                 />
               )}
             </motion.div>
@@ -361,6 +391,7 @@ export default function App() {
             activeTab={currentTab}
             onSelectTab={handleSelectTab}
             userScore={userScore}
+            onNotify={showNotice}
           />
         )}
         {isSettingsOpen && (
@@ -369,6 +400,27 @@ export default function App() {
             onClose={() => setIsSettingsOpen(false)}
             onResetData={handleResetApplication}
           />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            key={notice.id}
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 18 }}
+            className={`fixed bottom-24 left-4 right-4 md:left-auto md:right-6 md:w-80 z-[70] rounded-xl px-4 py-3 text-xs font-bold shadow-2xl border ${
+              notice.tone === 'success'
+                ? 'bg-green-50 text-[#006b2c] border-green-100'
+                : notice.tone === 'error'
+                  ? 'bg-rose-50 text-rose-600 border-rose-100'
+                  : notice.tone === 'warning'
+                    ? 'bg-amber-50 text-amber-700 border-amber-100'
+                    : 'bg-zinc-900 text-white border-zinc-800'
+            }`}
+          >
+            {notice.message}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
