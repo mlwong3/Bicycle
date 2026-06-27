@@ -6,12 +6,12 @@ import type { Firestore } from 'firebase/firestore';
 // 安全性由 Firestore 規則 + Auth 把關，非機密憑證）。
 // 優先使用建置環境的 VITE_FIREBASE_* 變數，未提供時回退到下方專案 bicycle-10499 的設定。
 const FALLBACK_FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyAKNsu3GPW3l6CR6WuZAktNicDaXPRy6BQ',
-  authDomain: 'bicycle-10499.firebaseapp.com',
-  projectId: 'bicycle-10499',
-  storageBucket: 'bicycle-10499.firebasestorage.app',
-  messagingSenderId: '729712744526',
-  appId: '1:729712744526:web:288ae7cd8050f3fc090b1f',
+  apiKey: 'AIzaSyD-OWygHwIvIss5UV11IxzzaslmTWt1Uik',
+  authDomain: 'bicycle-ee76c.firebaseapp.com',
+  projectId: 'bicycle-ee76c',
+  storageBucket: 'bicycle-ee76c.firebasestorage.app',
+  messagingSenderId: '201437326962',
+  appId: '1:201437326962:web:d4ca20885391a9cc1d1ceb',
 };
 
 const firebaseConfig = {
