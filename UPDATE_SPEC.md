@@ -20,6 +20,10 @@
 | 6 | Firebase Hosting 部署設定 | 新增 `firebase.json`、`.firebaserc`、`.github/workflows/firebase-deploy.yml`（專案 `bicycle-ee76c`）、`DEPLOY_FIREBASE.md` 指引。選定 Firebase Hosting + GitHub Actions 自動部署 | ✅ 設定完成（待最終驗證） |
 | 7 | 輕量 Firebase 後端及程式碼改進 | 採用 Firebase Authentication 匿名登入 + Firestore 作輕量後端，新增 `src/firebase.ts`、`src/backend.ts`、`.env.example`、Firestore 規則；保留 localStorage fallback。完成開放數據快取 / 節流、安全 storage 版本化、App 內通知取代 `alert()`、README / metadata / title 更新 | ✅ 完成（待部署驗證） |
 | 8 | 更新下一輪程式碼改進規劃 | 清理第五章已完成項目，改為聚焦 NFC 私隱、Firebase 實測、MapTab 拆分、資料一致性、i18n、依賴清理及部署驗證 | ✅ 完成 |
+| 9 | Firebase 連線現況釐清 + 5.2 好處 | 實測確認部署版未注入金鑰、未真正連 Firestore（退回 localStorage）；`firebase-deploy.yml` 加入 `VITE_FIREBASE_*` env 注入；5.2 補上「連上 Firebase 的好處」與操作步驟 | ✅ 完成 |
+| 10 | MapTab 拆分（第一階段） | 抽出 `ParkingInfoCard`、`NavigationPanel` 兩個展示元件，MapTab 縮短約 130 行；`useLeafletMap` / `useCyclingData` / `MapControls` 留待下一輪 | ✅ 完成 |
+| 11 | 示範收藏路線 | 個人中心「收藏路線」改名「示範收藏路線」，明確標示為示範數據 | ✅ 完成 |
+| 12 | 只保留繁體中文 | 移除個人中心語言切換 UI 與英文選項、App 的 `language` 狀態與英文標題分支，全站固定繁體中文 | ✅ 完成 |
 
 > 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit。
 
@@ -190,18 +194,39 @@ NFC 標籤建議只寫入以下最少資料：
 
 ### 5.2 Firebase 實測、權限與部署環境
 
-**目標**：確認輕量 Firebase 後端不只是程式骨架，而是可在部署環境實際同步資料。
+**現況（2026-06-27 實測）**：Firebase **連線程式碼已就緒，但部署版尚未真正連上 server**。
+`firebase` 套件已安裝、`src/firebase.ts` 的匿名登入 + Firestore 邏輯已寫好；但
+`firebase-deploy.yml` 未注入 `VITE_FIREBASE_*` 金鑰、亦無 `.env.local`，故
+`isFirebaseConfigured` 為 `false` → `getFirebaseServices()` 回 `null` → 自動退回
+localStorage。換言之「引擎已裝好但未插鑰匙」，現在資料只存在使用者本機瀏覽器。
 
-- 在 Firebase Console 啟用 Anonymous Authentication。
-- 啟用 Cloud Firestore，並部署 `firestore.rules`。
-- 在部署環境加入 `VITE_FIREBASE_*` 變數。
-- 實測以下資料是否成功寫入 Firestore：
-  - `bikes`
-  - `nfcTags`
-  - `reports`
-  - `trips`
-- 檢查 Firestore 規則是否只容許使用者讀寫自己建立的資料。
-- 後續如要校內試用，加入 `role` 設計：`student`、`teacher`、`admin`。
+> 補充：Firebase 是 Google 的雲端 serverless 後端（Auth + Firestore 皆在 Google 伺服器），
+> 不需自架伺服器；「連上 server」指的是把前端金鑰接上、讓 App 與 Firestore 實際通訊。
+
+**真正連上 Firebase 後的好處（為何值得做）**：
+
+- **跨裝置 / 跨瀏覽器同步**：資料存雲端，換手機、換電腦、清快取後仍在；不再像
+  localStorage 只綁單一瀏覽器。對比賽展示尤其重要——評審用自己的裝置掃 NFC / 開網址，
+  也能看到同一筆登記資料。
+- **多人協作與即時性**：多位同學或評審同時操作時看到一致資料；Firestore 可即時更新。
+- **資料可信度與持久性**：舉報、單車、行程紀錄不會因清瀏覽器資料而消失，作品更像真實系統。
+- **權限控管（資安加分）**：透過 `firestore.rules` 限制「只能讀寫自己建立的資料」，
+  可向評審展示真實的後端安全設計，而非純前端假資料。
+- **展示「真‧前後端架構」**：從「純前端 + 假資料」升級為「前端 + 雲端資料庫 + 匿名身分」，
+  是 STEM 評審重視的工程完整度。
+- **可擴充校內試用**：日後可加 `role`（`student` / `teacher` / `admin`）做分級管理。
+
+**要做的事（讓它真正連上）**：
+
+1. Firebase Console → 啟用 **Anonymous Authentication**。
+2. 啟用 **Cloud Firestore**，並部署 `firestore.rules`。
+3. 取得網頁應用程式設定（apiKey、authDomain、appId 等），於 GitHub 加入 Secrets：
+   `VITE_FIREBASE_API_KEY`、`VITE_FIREBASE_AUTH_DOMAIN`、`VITE_FIREBASE_PROJECT_ID`、
+   `VITE_FIREBASE_STORAGE_BUCKET`、`VITE_FIREBASE_MESSAGING_SENDER_ID`、`VITE_FIREBASE_APP_ID`。
+   （`firebase-deploy.yml` 的 build 步驟已加入這些 `env:` 注入，設好 Secret 即生效。）
+4. 本機開發則於 `.env.local` 填同樣變數（範本見 `.env.example`）。
+5. 實測 `bikes` / `nfcTags` / `reports` / `trips` 是否成功寫入 Firestore。
+6. 檢查規則是否只容許使用者讀寫自己建立的資料。
 
 **驗收標準**：
 
@@ -209,6 +234,7 @@ NFC 標籤建議只寫入以下最少資料：
 - 登記單車後 Firestore 出現對應 `bikes` / `nfcTags` 文件。
 - 提交舉報後 Firestore 出現對應 `reports` 文件。
 - 完成導航後 Firestore 出現對應 `trips` 文件。
+- 未設定金鑰時，App 仍能以 localStorage 正常展示（優雅降級）。
 
 ### 5.3 MapTab 拆分與地圖體驗
 
@@ -228,9 +254,16 @@ NFC 標籤建議只寫入以下最少資料：
 - 加入「載入此區域」按鈕，讓使用者主動載入大量資料。
 - 評估加入 CYCRAMP 單車斜道 / 隧道 / 橋圖層。
 
+**進度（2026-06-27）**：
+- ✅ 已抽出 `src/components/map/ParkingInfoCard.tsx`（泊位資訊卡）。
+- ✅ 已抽出 `src/components/map/NavigationPanel.tsx`（導航面板）。動畫包裝 (`motion.div` + `key`)
+  留在 MapTab，子元件只負責內容，`tsc` 與 build 已通過、行為不變。
+- ⏳ 待續：`useLeafletMap`（地圖初始化 / 底圖 / WMS）、`useCyclingData`（開放數據載入）、
+  `MapControls`（搜尋列 / CSDI key / 圖層選單）尚未抽出，留待下一輪（屬較高風險重構）。
+
 **驗收標準**：
 
-- `MapTab.tsx` 明顯縮短，主要只負責組合子模組。
+- `MapTab.tsx` 明顯縮短，主要只負責組合子模組。（目前已縮短約 130 行，持續進行中）
 - 地圖原有功能保持不變。
 - `npm run lint` 及 build 通過。
 

@@ -4,6 +4,8 @@ import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { haversineKm } from '../carbon';
+import ParkingInfoCard from './map/ParkingInfoCard';
+import NavigationPanel from './map/NavigationPanel';
 import { readStoredJson, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from '../storage';
 import { 
   Search, 
@@ -958,104 +960,36 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         <AnimatePresence mode="wait">
           {!isNavigating ? (
             selectedSpot && (
-            <motion.div
-              key="spot-info"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl border border-zinc-100 p-4 font-sans"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[9px] bg-green-50 text-[#006b2c] border border-green-100 px-2 py-0.5 rounded font-black tracking-wider block w-max uppercase mb-1">
-                    運輸署開放數據
-                  </span>
-                  <h3 className="text-sm font-black text-zinc-900 tracking-tight leading-tight">{selectedSpot.name}</h3>
-                  <p className="text-[10px] text-zinc-400 mt-1 flex items-center font-bold">
-                    <Compass className="w-3.5 h-3.5 mr-1 text-[#006b2c] shrink-0" />
-                    {selectedSpot.distance} • {selectedSpot.type}
-                  </p>
-                  <p className="text-[8px] text-zinc-400 font-bold mt-0.5 tracking-tight">
-                    © 運輸署 (TD) 單車資訊開放數據 / CSDI
-                  </p>
-                </div>
-                <div className={`px-2.5 py-1 rounded-full flex items-center gap-1 border text-[10px] font-black ${
-                  selectedSpot.totalSlots === 0
-                    ? 'bg-rose-50 border-rose-100 text-rose-500'
-                    : 'bg-green-50 border-green-100 text-[#006b2c]'
-                }`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                  <span>登記車位: {selectedSpot.totalSlots}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2.5 mt-3 pt-2.5 border-t border-zinc-50">
-                <button
-                  onClick={startNavigation}
-                  disabled={selectedSpot.availableSlots === 0}
-                  className={`flex-1 font-bold py-2.5 px-4 rounded-xl flex justify-center items-center gap-1.5 text-xs transition-colors cursor-pointer ${
-                    selectedSpot.availableSlots === 0 
-                      ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
-                      : 'bg-[#006b2c] hover:bg-[#005320] text-white shadow-md shadow-[#006b2c]/10'
-                  }`}
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                  開始路線導航
-                </button>
-                
-                <button
-                  onClick={() => toggleSaveParking(selectedSpot.id)}
-                  className="p-2.5 border border-zinc-200 text-zinc-500 hover:text-[#006b2c] hover:border-[#006b2c]/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer"
-                  title={isSaved ? "取消收藏" : "收藏泊車區"}
-                >
-                  {isSaved ? (
-                    <BookmarkCheck className="w-4 h-4 text-[#006b2c] fill-current" />
-                  ) : (
-                    <Bookmark className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            </motion.div>
+              <motion.div
+                key="spot-info"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+              >
+                <ParkingInfoCard
+                  spot={selectedSpot}
+                  isSaved={isSaved}
+                  onStartNavigation={startNavigation}
+                  onToggleSave={() => toggleSaveParking(selectedSpot.id)}
+                />
+              </motion.div>
             )
           ) : (
-            <motion.div
-              key="navigating-panel"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="bg-zinc-900 border border-zinc-800 text-white rounded-3xl shadow-2xl p-4 font-sans"
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h4 className="text-[9px] font-black text-[#006b2c] uppercase tracking-wider">正在進行智能導航</h4>
-                  <p className="text-xs font-bold text-white mt-0.5 leading-tight">{selectedSpot.name}</p>
-                </div>
-                <button
-                  onClick={stopNavigation}
-                  className="text-[10px] text-zinc-400 hover:text-white font-black px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer"
-                >
-                  結束導航
-                </button>
-              </div>
-
-              <div className="space-y-2.5 my-3">
-                <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-                  <motion.div
-                    className="bg-[#006b2c] h-full"
-                    style={{ width: `${navigationProgress}%` }}
-                    transition={{ duration: 0.3 }}
-                  />
-                </div>
-                <p className="text-[11px] text-zinc-300 min-h-[30px] leading-relaxed font-semibold">
-                  {navigationMessage}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-[9px] text-zinc-500 font-bold border-t border-zinc-800/60 pt-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 block animate-pulse" />
-                <span>GPS 與 CSDI 空間路網串接成功</span>
-              </div>
-            </motion.div>
+            selectedSpot && (
+              <motion.div
+                key="navigating-panel"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+              >
+                <NavigationPanel
+                  spotName={selectedSpot.name}
+                  progress={navigationProgress}
+                  message={navigationMessage}
+                  onStop={stopNavigation}
+                />
+              </motion.div>
+            )
           )}
         </AnimatePresence>
       </div>

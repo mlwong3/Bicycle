@@ -60,10 +60,6 @@ export default function App() {
     return readStoredString(STORAGE_KEYS.currentTab, 'report', ['hk_bike_current_active_tab']);
   });
 
-  const [language, setLanguage] = useState<string>(() => {
-    return readStoredString(STORAGE_KEYS.language, 'zh', ['hk_bike_display_language']);
-  });
-
   // --- Sidebar & Settings states ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -107,10 +103,6 @@ export default function App() {
   useEffect(() => {
     writeStoredString(STORAGE_KEYS.currentTab, currentTab);
   }, [currentTab]);
-
-  useEffect(() => {
-    writeStoredString(STORAGE_KEYS.language, language);
-  }, [language]);
 
   // --- Handlers ---
   const handleOnboardingComplete = () => {
@@ -178,7 +170,6 @@ export default function App() {
     setUserScore(450);
     setTotalDistanceKm(0);
     setCurrentTab('report');
-    setLanguage('zh');
   };
 
   // Switch tabs
@@ -191,13 +182,10 @@ export default function App() {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
-  // --- UI Elements ---
+  // --- UI Elements ---（只保留繁體中文）
   const currentTabName = () => {
     switch (currentTab) {
-      case 'map': return language === 'zh' ? '地圖導航' : 'Map Route';
-      case 'report': return language === 'zh' ? '單車管理' : 'Bike Manager';
-      case 'nfc': return language === 'zh' ? '單車管理' : 'Bike Manager';
-      case 'personal': return language === 'zh' ? '單車管理' : 'Bike Manager';
+      case 'map': return '地圖導航';
       default: return '單車管理';
     }
   };
@@ -338,8 +326,6 @@ export default function App() {
                   totalDistanceKm={totalDistanceKm}
                   onUnbindBike={handleUnbindBike}
                   onNavigateToTab={handleSelectTab}
-                  language={language}
-                  onChangeLanguage={setLanguage}
                   onNotify={showNotice}
                 />
               )}

@@ -4,7 +4,7 @@ import { Bike, Report } from '../types';
 import { carbonSaved, CAR_CO2_PER_KM } from '../carbon';
 import { 
   Plus, CheckCircle, AlertCircle, Trash2, Award, 
-  MapPin, HelpCircle, ChevronRight, Bell, Languages, 
+  MapPin, HelpCircle, ChevronRight, Bell,
   X, Compass, Heart, History, Flame, Mail, Send, Check
 } from 'lucide-react';
 
@@ -16,8 +16,6 @@ interface PersonalTabProps {
   totalDistanceKm: number;
   onUnbindBike: (id: string) => void;
   onNavigateToTab: (tab: string) => void;
-  language: string;
-  onChangeLanguage: (lang: string) => void;
   onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
@@ -29,14 +27,11 @@ export default function PersonalTab({
   totalDistanceKm,
   onUnbindBike,
   onNavigateToTab,
-  language,
-  onChangeLanguage,
   onNotify
 }: PersonalTabProps) {
   const [selectedBike, setSelectedBike] = useState<Bike | null>(null);
-  
+
   // Settings Modals
-  const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
 
@@ -148,7 +143,7 @@ export default function PersonalTab({
             </div>
             <div>
               <h4 className="text-2xl font-black text-zinc-900 leading-none mb-1">12</h4>
-              <p className="text-xs text-zinc-500 font-semibold">收藏路線</p>
+              <p className="text-xs text-zinc-500 font-semibold">示範收藏路線</p>
             </div>
           </div>
 
@@ -215,24 +210,6 @@ export default function PersonalTab({
 
       {/* 4. Settings Card list buttons */}
       <section id="settings-list-section" className="bg-zinc-50 rounded-2xl border border-zinc-200/80 overflow-hidden mb-6">
-        {/* Language setting */}
-        <button
-          id="setting-lang-btn"
-          onClick={() => setShowLanguageModal(true)}
-          className="w-full flex items-center justify-between p-4 border-b border-zinc-100 hover:bg-[#006b2c]/5 transition-colors duration-200 cursor-pointer"
-        >
-          <div className="flex items-center gap-3">
-            <Languages className="w-5 h-5 text-zinc-400 shrink-0" />
-            <span className="text-xs font-bold text-zinc-900">語言設定</span>
-          </div>
-          <div className="flex items-center gap-1 text-zinc-400">
-            <span className="text-xs font-medium text-zinc-500">
-              {language === 'zh' ? '繁體中文' : 'English'}
-            </span>
-            <ChevronRight className="w-4 h-4" />
-          </div>
-        </button>
-
         {/* Notifications Setting */}
         <button
           id="setting-noti-btn"
@@ -315,46 +292,6 @@ export default function PersonalTab({
                 >
                   確認
                 </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-
-        {/* 1. Language settings Modal */}
-        {showLanguageModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-5 shadow-2xl max-w-xs w-full border border-zinc-100"
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-bold text-zinc-900">選擇顯示語言</h3>
-                <button onClick={() => setShowLanguageModal(false)} className="p-1 hover:bg-zinc-100 rounded-full transition-colors cursor-pointer text-zinc-400">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-1.5">
-                {[
-                  { key: 'zh', name: '繁體中文 (繁體)' },
-                  { key: 'en', name: 'English (US)' }
-                ].map((lang) => (
-                  <button
-                    key={lang.key}
-                    onClick={() => {
-                      onChangeLanguage(lang.key);
-                      setShowLanguageModal(false);
-                    }}
-                    className={`w-full text-left px-3.5 py-3 rounded-xl text-xs font-bold transition-colors flex items-center justify-between ${
-                      language === lang.key ? 'bg-[#006b2c]/10 text-[#006b2c]' : 'hover:bg-zinc-50 text-zinc-700'
-                    }`}
-                  >
-                    <span>{lang.name}</span>
-                    {language === lang.key && <Check className="w-4 h-4 shrink-0" />}
-                  </button>
-                ))}
               </div>
             </motion.div>
           </div>
