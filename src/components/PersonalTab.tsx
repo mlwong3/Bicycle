@@ -4,7 +4,7 @@ import { Bike, Report } from '../types';
 import { carbonSaved, CAR_CO2_PER_KM } from '../carbon';
 import { 
   Plus, CheckCircle, AlertCircle, Trash2, Award, 
-  MapPin, HelpCircle, ChevronRight, Bell,
+  MapPin, HelpCircle, ChevronRight, Bell, Info,
   X, Compass, Heart, History, Flame, Mail, Send, Check
 } from 'lucide-react';
 
@@ -12,6 +12,7 @@ interface PersonalTabProps {
   bikes: Bike[];
   reports: Report[];
   savedParkingCount: number;
+  savedParkingIds: string[];
   userScore: number;
   totalDistanceKm: number;
   onUnbindBike: (id: string) => void;
@@ -23,6 +24,7 @@ export default function PersonalTab({
   bikes,
   reports,
   savedParkingCount,
+  savedParkingIds,
   userScore,
   totalDistanceKm,
   onUnbindBike,
@@ -42,6 +44,19 @@ export default function PersonalTab({
   // Notifications states
   const [notiPush, setNotiPush] = useState(true);
   const [notiMute, setNotiMute] = useState(false);
+
+  // 「我的收藏與紀錄」詳細頁：示範路線 / 收藏泊位 / 舉報紀錄
+  const [recordView, setRecordView] = useState<null | 'routes' | 'parking' | 'reports'>(null);
+
+  // 示範收藏路線資料（清楚標示為示範用途）
+  const DEMO_ROUTES = [
+    { name: '城門河單車徑', length: '7.2 km', area: '沙田' },
+    { name: '沙田至大埔海濱', length: '12.5 km', area: '沙田 ↔ 大埔' },
+    { name: '大尾督至汀角路', length: '5.8 km', area: '大埔' },
+    { name: '馬鞍山海濱長廊', length: '6.4 km', area: '馬鞍山' },
+    { name: '大圍至車公廟段', length: '2.1 km', area: '大圍' },
+    { name: '科學園海濱單車徑', length: '3.0 km', area: '白石角' },
+  ];
 
   const pendingReportsCount = reports.filter(r => r.status === 'pending').length;
   const resolvedReportsCount = reports.filter(r => r.status === 'resolved').length;
@@ -135,51 +150,68 @@ export default function PersonalTab({
         <h3 id="bento-grid-title" className="text-base font-bold text-zinc-950 tracking-tight">我的收藏與紀錄</h3>
         <div id="bento-grid" className="grid grid-cols-2 gap-3.5">
           {/* Bento Item 1: Routes */}
-          <div className="bg-zinc-50 rounded-2xl p-4 flex flex-col justify-between aspect-square border border-zinc-200/80 shadow-sm transition-all hover:bg-white hover:shadow-md">
-            <div className="w-9 h-9 rounded-full bg-[#006b2c]/10 flex items-center justify-center text-[#006b2c] mb-2">
-              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
+          <button
+            onClick={() => setRecordView('routes')}
+            className="text-left bg-zinc-50 rounded-2xl p-4 flex flex-col justify-between aspect-square border border-zinc-200/80 shadow-sm transition-all hover:bg-white hover:shadow-md hover:border-[#006b2c]/30 cursor-pointer group"
+          >
+            <div className="flex justify-between items-start">
+              <div className="w-9 h-9 rounded-full bg-[#006b2c]/10 flex items-center justify-center text-[#006b2c] mb-2">
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#006b2c] transition-colors" />
             </div>
             <div>
-              <h4 className="text-2xl font-black text-zinc-900 leading-none mb-1">12</h4>
+              <h4 className="text-2xl font-black text-zinc-900 leading-none mb-1">{DEMO_ROUTES.length}</h4>
               <p className="text-xs text-zinc-500 font-semibold">示範收藏路線</p>
             </div>
-          </div>
+          </button>
 
           {/* Bento Item 2: Saved Parking (Real state synced) */}
-          <div className="bg-zinc-50 rounded-2xl p-4 flex flex-col justify-between aspect-square border border-zinc-200/80 shadow-sm transition-all hover:bg-white hover:shadow-md">
-            <div className="w-9 h-9 rounded-full bg-[#006b2c]/10 flex items-center justify-center text-[#006b2c] mb-2">
-              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <path d="M9 17V7h4a3 3 0 0 1 0 6H9"></path>
-              </svg>
+          <button
+            onClick={() => setRecordView('parking')}
+            className="text-left bg-zinc-50 rounded-2xl p-4 flex flex-col justify-between aspect-square border border-zinc-200/80 shadow-sm transition-all hover:bg-white hover:shadow-md hover:border-[#006b2c]/30 cursor-pointer group"
+          >
+            <div className="flex justify-between items-start">
+              <div className="w-9 h-9 rounded-full bg-[#006b2c]/10 flex items-center justify-center text-[#006b2c] mb-2">
+                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <path d="M9 17V7h4a3 3 0 0 1 0 6H9"></path>
+                </svg>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#006b2c] transition-colors" />
             </div>
             <div>
               <h4 id="bento-parking-val" className="text-2xl font-black text-zinc-900 leading-none mb-1">{savedParkingCount}</h4>
               <p className="text-xs text-zinc-500 font-semibold">收藏泊位</p>
             </div>
-          </div>
+          </button>
 
           {/* Bento Item 3: Reports Count (Real state synced) */}
-          <div className="bg-zinc-50 rounded-2xl p-4 flex flex-col justify-between aspect-square border border-zinc-200/80 shadow-sm transition-all hover:bg-white hover:shadow-md">
+          <button
+            onClick={() => setRecordView('reports')}
+            className="text-left bg-zinc-50 rounded-2xl p-4 flex flex-col justify-between aspect-square border border-zinc-200/80 shadow-sm transition-all hover:bg-white hover:shadow-md hover:border-[#006b2c]/30 cursor-pointer group"
+          >
             <div className="flex justify-between items-start mb-2">
               <div className="w-9 h-9 rounded-full bg-rose-50 flex items-center justify-center text-rose-500">
                 <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              {pendingReportsCount > 0 && (
+              {pendingReportsCount > 0 ? (
                 <span className="text-[9px] font-black text-rose-500 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full">
                   {pendingReportsCount}件待核
                 </span>
+              ) : (
+                <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#006b2c] transition-colors" />
               )}
             </div>
             <div>
               <h4 id="bento-reports-val" className="text-2xl font-black text-zinc-900 leading-none mb-1">{reports.length}</h4>
               <p className="text-xs text-zinc-500 font-semibold">舉報紀錄 (已結辦 {resolvedReportsCount}件)</p>
             </div>
-          </div>
+          </button>
 
           {/* Bento Item 4: Carbon Reduced (Real state synced) */}
           <div className="bg-[#006b2c] text-white rounded-2xl p-4 flex flex-col justify-between aspect-square border border-[#006b2c] shadow-[0_4px_16px_rgba(0,107,44,0.15)] relative overflow-hidden">
@@ -239,6 +271,112 @@ export default function PersonalTab({
 
       {/* MODALS */}
       <AnimatePresence>
+        {/* 收藏與紀錄詳細頁（示範路線 / 收藏泊位 / 舉報紀錄） */}
+        {recordView && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-5 shadow-2xl max-w-md w-full border border-zinc-100 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-base font-bold text-zinc-900">
+                  {recordView === 'routes' ? '示範收藏路線' : recordView === 'parking' ? '收藏泊位' : '舉報紀錄'}
+                </h3>
+                <button onClick={() => setRecordView(null)} className="p-1 hover:bg-zinc-100 rounded-full transition-colors cursor-pointer text-zinc-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* 1) 示範收藏路線 */}
+              {recordView === 'routes' && (
+                <div className="space-y-3">
+                  <div className="bg-amber-50 text-amber-600 border border-amber-100 rounded-xl p-2.5 text-[10px] font-bold flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 shrink-0" /> 以下為示範路線數據，供介面展示用途。
+                  </div>
+                  {DEMO_ROUTES.map((r, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                      <div className="w-9 h-9 rounded-full bg-[#006b2c]/10 flex items-center justify-center text-[#006b2c] shrink-0">
+                        <Compass className="w-4.5 h-4.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-zinc-900 truncate">{r.name}</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold">{r.area} · 全長 {r.length}</p>
+                      </div>
+                      <Heart className="w-4 h-4 text-rose-400 fill-current shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 2) 收藏泊位 */}
+              {recordView === 'parking' && (
+                <div className="space-y-3">
+                  {savedParkingIds.length === 0 ? (
+                    <p className="text-xs text-zinc-500 text-center py-6">尚未收藏任何泊位。可到地圖頁點選泊位後收藏。</p>
+                  ) : (
+                    savedParkingIds.map((id) => (
+                      <div key={id} className="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                        <div className="w-9 h-9 rounded-full bg-[#006b2c]/10 flex items-center justify-center text-[#006b2c] shrink-0">
+                          <MapPin className="w-4.5 h-4.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-zinc-900 truncate">
+                            {id.startsWith('td-') ? `運輸署登記泊位 #${id.replace('td-', '')}` : `泊位 ${id}`}
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold">已收藏 · 於地圖查看實際位置</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <button
+                    onClick={() => { setRecordView(null); onNavigateToTab('map'); }}
+                    className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <MapPin className="w-4 h-4" /> 前往地圖管理泊位
+                  </button>
+                </div>
+              )}
+
+              {/* 3) 舉報紀錄 */}
+              {recordView === 'reports' && (
+                <div className="space-y-3">
+                  {reports.length === 0 ? (
+                    <p className="text-xs text-zinc-500 text-center py-6">尚未有任何舉報紀錄。</p>
+                  ) : (
+                    reports.map((rep) => (
+                      <div key={rep.id} className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                        <div className="flex justify-between items-start gap-2">
+                          <p className="text-xs font-bold text-zinc-900 flex items-center gap-1.5 min-w-0">
+                            <MapPin className="w-3.5 h-3.5 text-[#006b2c] shrink-0" />
+                            <span className="truncate">{rep.location}</span>
+                          </p>
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border shrink-0 ${
+                            rep.status === 'resolved'
+                              ? 'bg-green-50 text-[#006b2c] border-green-100'
+                              : 'bg-rose-50 text-rose-500 border-rose-100'
+                          }`}>
+                            {rep.status === 'resolved' ? '已結辦' : '待核'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-zinc-500 mt-1.5 leading-relaxed">{rep.description}</p>
+                        <p className="text-[9px] text-zinc-400 font-bold mt-1.5">{rep.date}</p>
+                      </div>
+                    ))
+                  )}
+                  <button
+                    onClick={() => { setRecordView(null); onNavigateToTab('report'); }}
+                    className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Send className="w-4 h-4" /> 提交新舉報
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+
         {/* Bike Details Popup Dialog */}
         {selectedBike && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">

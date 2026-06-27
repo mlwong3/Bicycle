@@ -322,6 +322,7 @@ export default function App() {
                   bikes={bikes}
                   reports={reports}
                   savedParkingCount={savedParkingIds.length}
+                  savedParkingIds={savedParkingIds}
                   userScore={userScore}
                   totalDistanceKm={totalDistanceKm}
                   onUnbindBike={handleUnbindBike}
