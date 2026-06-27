@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
+import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { 
   Search, 
   SlidersHorizontal, 
@@ -18,7 +19,9 @@ import {
   ExternalLink,
   Info,
   Plus,
-  Minus
+  Minus,
+  Bike,
+  Loader2
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -97,6 +100,17 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   useEffect(() => {
     localStorage.setItem('HK_BIKE_ENABLED_WMS_LAYERS', JSON.stringify(enabledWmsLayers));
   }, [enabledWmsLayers]);
+
+  // 運輸署官方單車開放數據（CSDI ArcGIS REST）疊加開關
+  const [showCyclingData, setShowCyclingData] = useState<boolean>(() => {
+    const saved = localStorage.getItem('HK_BIKE_SHOW_CYCLING_DATA');
+    return saved ? saved === 'true' : true; // 預設開啟
+  });
+  const [cyclingStatus, setCyclingStatus] = useState<'idle' | 'loading' | 'ok' | 'error' | 'zoomout'>('idle');
+
+  useEffect(() => {
+    localStorage.setItem('HK_BIKE_SHOW_CYCLING_DATA', String(showCyclingData));
+  }, [showCyclingData]);
   
   // Map themes supported:
   // - csdi-topographic: Official CSDI LandsD standard map (requires key)
@@ -117,6 +131,11 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const markersRef = useRef<Record<string, L.Marker>>({});
   const polylineRef = useRef<L.Polyline | null>(null);
   const wmsLayersRef = useRef<Record<string, L.TileLayer.WMS>>({});
+
+  // 官方單車數據圖層 refs
+  const cyclingTrackLayerRef = useRef<L.GeoJSON | null>(null);
+  const cyclingParkingLayerRef = useRef<L.GeoJSON | null>(null);
+  const cyclingAbortRef = useRef<AbortController | null>(null);
 
   // Handle key persistence
   const saveCsdiKey = (key: string) => {
@@ -395,6 +414,98 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
   }, [isNavigating, selectedSpot]);
 
+  // 載入並渲染運輸署官方單車開放數據（單車徑 + 泊位），依可視範圍 bbox 查詢
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const clearLayers = () => {
+      if (cyclingTrackLayerRef.current) {
+        cyclingTrackLayerRef.current.remove();
+        cyclingTrackLayerRef.current = null;
+      }
+      if (cyclingParkingLayerRef.current) {
+        cyclingParkingLayerRef.current.remove();
+        cyclingParkingLayerRef.current = null;
+      }
+    };
+
+    if (!showCyclingData) {
+      clearLayers();
+      cyclingAbortRef.current?.abort();
+      setCyclingStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      // 縮得太遠時範圍過大、要素過多，先不載入以保效能
+      if (map.getZoom() < 13) {
+        clearLayers();
+        if (!cancelled) setCyclingStatus('zoomout');
+        return;
+      }
+
+      cyclingAbortRef.current?.abort();
+      const controller = new AbortController();
+      cyclingAbortRef.current = controller;
+
+      const b = map.getBounds();
+      const bbox = {
+        minLng: b.getWest(),
+        minLat: b.getSouth(),
+        maxLng: b.getEast(),
+        maxLat: b.getNorth(),
+      };
+
+      if (!cancelled) setCyclingStatus('loading');
+      try {
+        const [tracks, parking] = await Promise.all([
+          fetchCyclingLayer(CYCLING_LAYERS.track, bbox, controller.signal),
+          fetchCyclingLayer(CYCLING_LAYERS.parking, bbox, controller.signal),
+        ]);
+        if (cancelled) return;
+        clearLayers();
+
+        // 單車徑：綠色實線
+        cyclingTrackLayerRef.current = L.geoJSON(tracks, {
+          style: { color: '#006b2c', weight: 3, opacity: 0.6, lineCap: 'round' },
+          onEachFeature: (_f, layer) => layer.bindPopup('<div class="font-bold text-xs">運輸署單車徑</div>'),
+        }).addTo(map);
+
+        // 官方泊位：小綠圈，附車位數
+        cyclingParkingLayerRef.current = L.geoJSON(parking, {
+          pointToLayer: (feature: any, latlng) =>
+            L.circleMarker(latlng, {
+              radius: 4,
+              color: '#ffffff',
+              weight: 1.5,
+              fillColor: '#006b2c',
+              fillOpacity: 0.75,
+            }).bindPopup(
+              `<div class="text-xs"><div class="font-bold">官方單車泊位</div>車位數：${
+                feature?.properties?.PARKING_SPACE ?? '—'
+              }（${feature?.properties?.OWNER ?? 'TD'}）</div>`
+            ),
+        }).addTo(map);
+
+        if (!cancelled) setCyclingStatus('ok');
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+        if (!cancelled) setCyclingStatus('error');
+      }
+    };
+
+    load();
+    map.on('moveend', load);
+    return () => {
+      cancelled = true;
+      map.off('moveend', load);
+      cyclingAbortRef.current?.abort();
+    };
+  }, [showCyclingData]);
+
   // Simulation engine for Navigation progression
   const startNavigation = () => {
     setIsNavigating(true);
@@ -633,6 +744,45 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
 
               <div className="h-px bg-zinc-100 my-3" />
 
+              {/* 運輸署官方單車數據疊加（公開 API，免密鑰） */}
+              <div className="flex items-center justify-between mb-2 px-1">
+                <h4 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">運輸署單車數據</h4>
+                <span className="text-[9px] font-black bg-green-50 text-[#006b2c] border border-green-100 px-1.5 py-0.5 rounded leading-none">即時 API</span>
+              </div>
+              <button
+                onClick={() => setShowCyclingData((v) => !v)}
+                className={`w-full text-left p-2 rounded-xl border transition-all flex items-center gap-2 cursor-pointer ${
+                  showCyclingData
+                    ? 'bg-[#006b2c]/5 border-[#006b2c]/30 text-[#006b2c]'
+                    : 'bg-zinc-50 border-zinc-100 text-zinc-600 hover:bg-zinc-100'
+                }`}
+              >
+                <Bike className="w-4 h-4 shrink-0" strokeWidth={2.5} />
+                <div className="flex flex-col flex-1">
+                  <span className="font-bold text-[11px]">官方單車徑與泊位</span>
+                  <span className="text-[9px] text-zinc-400 font-bold leading-tight">
+                    {cyclingStatus === 'loading'
+                      ? '載入中…'
+                      : cyclingStatus === 'error'
+                        ? '載入失敗，可重試'
+                        : cyclingStatus === 'zoomout'
+                          ? '請放大地圖以顯示'
+                          : showCyclingData
+                            ? '資料來源：運輸署 (TD) / CSDI'
+                            : '已關閉'}
+                  </span>
+                </div>
+                <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all ${
+                  showCyclingData ? 'bg-[#006b2c] border-[#006b2c] text-white' : 'border-zinc-300 bg-white'
+                }`}>
+                  {showCyclingData && (cyclingStatus === 'loading'
+                    ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    : <Check className="w-2.5 h-2.5 stroke-[3.5px]" />)}
+                </div>
+              </button>
+
+              <div className="h-px bg-zinc-100 my-3" />
+
               <div className="flex items-center justify-between mb-2 px-1">
                 <h4 className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">OGC WMS 官方圖層疊加</h4>
                 <span className="text-[9px] font-black bg-green-50 text-[#006b2c] border border-green-100 px-1.5 py-0.5 rounded leading-none">WMS 格式</span>
@@ -686,11 +836,34 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       </div>
 
       {/* Leaflet Dynamic Canvas Frame Container */}
-      <div 
-        ref={mapContainerRef} 
-        id="map-leaflet-canvas" 
-        className="w-full h-full bg-zinc-100 relative z-0" 
+      <div
+        ref={mapContainerRef}
+        id="map-leaflet-canvas"
+        className="w-full h-full bg-zinc-100 relative z-0"
       />
+
+      {/* 官方單車數據載入狀態浮動提示 */}
+      {showCyclingData && (cyclingStatus === 'loading' || cyclingStatus === 'error') && (
+        <div className="absolute top-20 right-4 z-1000 pointer-events-none">
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shadow-md text-[10px] font-black backdrop-blur-md border ${
+            cyclingStatus === 'error'
+              ? 'bg-rose-50/95 text-rose-500 border-rose-100'
+              : 'bg-white/95 text-[#006b2c] border-zinc-200/80'
+          }`}>
+            {cyclingStatus === 'loading' ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>載入運輸署單車數據…</span>
+              </>
+            ) : (
+              <>
+                <Info className="w-3 h-3" />
+                <span>官方數據載入失敗</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Missing CSDI API Key Dynamic Warning Prompt Card */}
       {!isKeyRegistered && (mapTheme === 'csdi-topographic' || mapTheme === 'csdi-satellite') && (
