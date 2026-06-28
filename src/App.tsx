@@ -193,7 +193,7 @@ export default function App() {
   };
 
   return (
-    <div id="app-wrapper" className="h-screen w-screen bg-[#fcf9f8] text-zinc-800 antialiased font-sans flex flex-col md:flex-row overflow-hidden">
+    <div id="app-wrapper" className="h-screen w-full max-w-full bg-[#fcf9f8] text-zinc-800 antialiased font-sans flex flex-col md:flex-row overflow-hidden">
       
       {/* 2. Web Side Navigation (Hidden on Mobile) */}
       <nav id="web-side-navbar" className="hidden md:flex flex-col h-full w-80 rounded-r-2xl bg-white border-r border-zinc-200 shadow-xl z-40 shrink-0">

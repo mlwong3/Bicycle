@@ -92,13 +92,13 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
   };
 
   return (
-    <div id="reporttab-root" className="px-5 py-4 space-y-8 max-w-3xl mx-auto font-sans text-zinc-800 pb-24">
+    <div id="reporttab-root" className="px-5 py-4 space-y-8 max-w-3xl mx-auto w-full font-sans text-zinc-800 pb-24 overflow-x-hidden">
       {/* SECTION 1: Report Form */}
       <section id="section-report-form" className="space-y-3">
-        <h2 id="report-form-title" className="text-xl font-bold text-zinc-900 flex items-center justify-between">
-          <span>違規舉報</span>
-          <span className="text-[11px] font-medium bg-[#006b2c]/10 text-[#006b2c] py-1 px-2.5 rounded-full">
-            提供真實資訊獲得 50 騎行積分
+        <h2 id="report-form-title" className="text-xl font-bold text-zinc-900 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+          <span className="shrink-0">違規舉報</span>
+          <span className="text-[11px] font-medium bg-[#006b2c]/10 text-[#006b2c] py-1 px-2.5 rounded-full whitespace-nowrap">
+            提供真實資訊獲得 50 積分
           </span>
         </h2>
 
