@@ -4,12 +4,14 @@ interface NavigationPanelProps {
   spotName: string;
   progress: number;
   message: string;
+  distanceKm: number;
+  etaMin: number;
   onStop: () => void;
 }
 
 // 地圖下方導航進度面板（模擬導航的進度條與語音指示）。
 // 進出場動畫由外層 MapTab 的 motion.div 包裝負責。
-export default function NavigationPanel({ spotName, progress, message, onStop }: NavigationPanelProps) {
+export default function NavigationPanel({ spotName, progress, message, distanceKm, etaMin, onStop }: NavigationPanelProps) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 text-white rounded-3xl shadow-2xl p-4 font-sans">
       <div className="flex justify-between items-start mb-3">
@@ -24,6 +26,20 @@ export default function NavigationPanel({ spotName, progress, message, onStop }:
           結束導航
         </button>
       </div>
+
+      {/* 距離與以 10 km/h 估算的時間 */}
+      {distanceKm > 0 && (
+        <div className="flex items-stretch gap-2 mb-3">
+          <div className="flex-1 bg-zinc-800/70 rounded-xl px-3 py-2">
+            <p className="text-[9px] text-zinc-500 font-bold">全程距離</p>
+            <p className="text-sm font-black text-white leading-tight">{distanceKm.toFixed(1)} <span className="text-[10px] font-bold text-zinc-400">km</span></p>
+          </div>
+          <div className="flex-1 bg-zinc-800/70 rounded-xl px-3 py-2">
+            <p className="text-[9px] text-zinc-500 font-bold">預計時間 (10 km/h)</p>
+            <p className="text-sm font-black text-white leading-tight">{Math.round(etaMin)} <span className="text-[10px] font-bold text-zinc-400">分鐘</span></p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2.5 my-3">
         <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">

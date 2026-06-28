@@ -5,6 +5,7 @@ import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { haversineKm } from '../carbon';
 import { getCyclingRoute } from '../mapbox';
+import { getCurrentPosition } from '../geolocation';
 import ParkingInfoCard from './map/ParkingInfoCard';
 import NavigationPanel from './map/NavigationPanel';
 import { readStoredJson, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from '../storage';
@@ -120,6 +121,18 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const [navigationMessage, setNavigationMessage] = useState('');
   // Mapbox 規劃出的真實單車路線幾何（null 時退回直線）
   const [routeGeometry, setRouteGeometry] = useState<any | null>(null);
+  // 導航行程的真實距離與以 10 km/h 估算的時間
+  const [navDistanceKm, setNavDistanceKm] = useState(0);
+  const [navEtaMin, setNavEtaMin] = useState(0);
+  // 使用者真實位置（GPS）；取得前以沙田中心作預設
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number }>(USER_COORDINATES);
+  const userPosRef = useRef(userPos);
+  useEffect(() => {
+    userPosRef.current = userPos;
+  }, [userPos]);
+
+  // 平均騎乘速度（km/h），用於估算行程時間
+  const CYCLING_SPEED_KMH = 10;
   const [isLayersOpen, setIsLayersOpen] = useState(false);
   const [isKeyPanelOpen, setIsKeyPanelOpen] = useState(false);
 
@@ -201,6 +214,25 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         mapRef.current.remove();
         mapRef.current = null;
       }
+    };
+  }, []);
+
+  // 取得使用者真實 GPS 位置，成功後更新位置並把地圖移到該處（失敗保留沙田預設）
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentPosition()
+      .then((pos) => {
+        if (cancelled) return;
+        setUserPos(pos);
+        if (mapRef.current) {
+          mapRef.current.setView([pos.lat, pos.lng], 16, { animate: true });
+        }
+      })
+      .catch(() => {
+        /* 使用者拒絕或不支援 → 沿用預設沙田中心 */
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -313,9 +345,9 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       iconAnchor: [16, 16]
     });
 
-    userMarkerRef.current = L.marker([USER_COORDINATES.lat, USER_COORDINATES.lng], { icon: userIcon })
+    userMarkerRef.current = L.marker([userPos.lat, userPos.lng], { icon: userIcon })
       .addTo(mapRef.current)
-      .bindPopup('<div class="font-bold text-xs">您的目前位置 (沙田中心)</div>');
+      .bindPopup('<div class="font-bold text-xs">您的目前位置</div>');
 
     // 2. Manage Parking Spots Markers
     // Clear old markers
@@ -390,7 +422,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       markersRef.current[spot.id] = marker;
     });
 
-  }, [searchQuery, selectedSpot, mapTheme, spots]);
+  }, [searchQuery, selectedSpot, mapTheme, spots, userPos]);
 
   // Handle centering map on selected spot
   useEffect(() => {
@@ -428,7 +460,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         // 退回直線（Mapbox 失敗或尚未回傳）
         polylineRef.current = L.polyline(
           [
-            [USER_COORDINATES.lat, USER_COORDINATES.lng],
+            [userPos.lat, userPos.lng],
             [destCoords.lat, destCoords.lng]
           ],
           {
@@ -445,7 +477,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
       }
     }
-  }, [isNavigating, selectedSpot, routeGeometry]);
+  }, [isNavigating, selectedSpot, routeGeometry, userPos]);
 
   // A. 載入並渲染運輸署「單車徑」圖層（綠線疊加，由開關控制）
   useEffect(() => {
@@ -533,8 +565,9 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       try {
         const fc = await fetchCyclingLayer(CYCLING_LAYERS.parking, bbox, controller.signal);
         if (cancelled) return;
+        const here = userPosRef.current;
         const list = (fc?.features ?? [])
-          .map((f: any) => featureToSpot(f, USER_COORDINATES))
+          .map((f: any) => featureToSpot(f, here))
           .filter((s: ParkingSpot | null): s is ParkingSpot => s !== null);
         setSpots(list);
         setParkingStatus('ok');
@@ -543,7 +576,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
           if (prev && list.some((s: ParkingSpot) => s.id === prev.id)) return prev;
           return list.length
             ? list.reduce((a: ParkingSpot, c: ParkingSpot) =>
-                haversineKm(USER_COORDINATES, c) < haversineKm(USER_COORDINATES, a) ? c : a)
+                haversineKm(here, c) < haversineKm(here, a) ? c : a)
             : null;
         });
       } catch (e: any) {
@@ -586,16 +619,20 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
 
     // 取得真實單車路線；失敗時 route 為 null，沿用直線與大圓距離
-    const route = await getCyclingRoute(USER_COORDINATES, { lat: dest.lat, lng: dest.lng });
+    const here = userPosRef.current;
+    const route = await getCyclingRoute(here, { lat: dest.lat, lng: dest.lng });
     setRouteGeometry(route?.geometry ?? null);
-    const tripKm = route?.distanceKm ?? haversineKm(USER_COORDINATES, { lat: dest.lat, lng: dest.lng });
+    const tripKm = route?.distanceKm ?? haversineKm(here, { lat: dest.lat, lng: dest.lng });
+    // 以固定 10 km/h 估算行程時間
+    const etaMin = (tripKm / CYCLING_SPEED_KMH) * 60;
+    setNavDistanceKm(tripKm);
+    setNavEtaMin(etaMin);
 
     setTimeout(() => {
       setNavigationProgress(25);
       setNavigationMessage(
-        route
-          ? `規劃完成：全長約 ${route.distanceKm.toFixed(1)} 公里，預計 ${Math.round(route.durationMin)} 分鐘。`
-          : '導航中：沿單車徑前進（無法取得詳細路線，顯示直線方向）。'
+        `規劃完成：全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘。`
+        + (route ? '' : '（無詳細路線，顯示直線方向）')
       );
     }, 1000);
 
@@ -628,10 +665,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const handleMyLocation = () => {
     if (!mapRef.current) return;
     setIsNavigating(false);
-    mapRef.current.setView([USER_COORDINATES.lat, USER_COORDINATES.lng], 16, {
-      animate: true,
-      duration: 1
-    });
+    // 先移到已知位置，再嘗試重新取得最新 GPS
+    mapRef.current.setView([userPosRef.current.lat, userPosRef.current.lng], 16, { animate: true, duration: 1 });
+    getCurrentPosition()
+      .then((pos) => {
+        setUserPos(pos);
+        mapRef.current?.setView([pos.lat, pos.lng], 16, { animate: true, duration: 1 });
+      })
+      .catch(() => {
+        /* 拒絕或不支援 → 維持目前已知位置 */
+      });
   };
 
   const isSaved = selectedSpot ? savedParkingIds.includes(selectedSpot.id) : false;
@@ -1003,6 +1046,8 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
                   spotName={selectedSpot.name}
                   progress={navigationProgress}
                   message={navigationMessage}
+                  distanceKm={navDistanceKm}
+                  etaMin={navEtaMin}
                   onStop={stopNavigation}
                 />
               </motion.div>
