@@ -4,7 +4,7 @@ import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { haversineKm } from '../carbon';
-import { getCyclingRoute } from '../mapbox';
+import { getCyclingRoute, searchPlaces, PlaceResult } from '../mapbox';
 import { getCurrentPosition } from '../geolocation';
 import ParkingInfoCard from './map/ParkingInfoCard';
 import NavigationPanel from './map/NavigationPanel';
@@ -27,7 +27,8 @@ import {
   Plus,
   Minus,
   Bike,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -112,6 +113,8 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   });
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [placeResults, setPlaceResults] = useState<PlaceResult[]>([]);
+  const [placeSearching, setPlaceSearching] = useState(false);
   // 泊位來源：運輸署開放數據（載入後填入），API 失敗時退回種子資料
   const [spots, setSpots] = useState<ParkingSpot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpot | null>(null);
@@ -180,6 +183,11 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const cyclingTrackLayerRef = useRef<L.GeoJSON | null>(null);
   const cyclingAbortRef = useRef<AbortController | null>(null);
   const parkingAbortRef = useRef<AbortController | null>(null);
+  // 導航逐步轉向計時器、地點搜尋結果標記
+  const navTimersRef = useRef<number[]>([]);
+  const searchMarkerRef = useRef<L.Marker | null>(null);
+  const placeAbortRef = useRef<AbortController | null>(null);
+  const placeTimerRef = useRef<number | undefined>(undefined);
 
   // Handle key persistence
   const saveCsdiKey = (key: string) => {
@@ -358,12 +366,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
     markersRef.current = {};
 
-    const filteredSpots = spots.filter(spot =>
-      spot.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      spot.type.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    filteredSpots.forEach((spot) => {
+    spots.forEach((spot) => {
       const coords = { lat: spot.lat, lng: spot.lng };
 
       const isActive = selectedSpot?.id === spot.id;
@@ -415,14 +418,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         .on('click', () => {
           setSelectedSpot(spot);
           if (isNavigating) {
+            clearNavTimers();
             setIsNavigating(false);
+            setRouteGeometry(null);
           }
         });
 
       markersRef.current[spot.id] = marker;
     });
 
-  }, [searchQuery, selectedSpot, mapTheme, spots, userPos]);
+  }, [selectedSpot, mapTheme, spots, userPos]);
 
   // Handle centering map on selected spot
   useEffect(() => {
@@ -605,10 +610,17 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     };
   }, []);
 
-  // Navigation：用 Mapbox 規劃真實單車路線，失敗則退回直線；以真實距離計算減碳
+  // 清掉所有導航計時器（停止 / 重新導航 / 點其他泊位時呼叫）
+  const clearNavTimers = () => {
+    navTimersRef.current.forEach((t) => window.clearTimeout(t));
+    navTimersRef.current = [];
+  };
+
+  // Navigation：用 Mapbox 規劃真實單車路線 + 逐步轉向；失敗退回直線。以真實距離計算減碳
   const startNavigation = async () => {
     if (!selectedSpot) return;
     const dest = selectedSpot;
+    clearNavTimers();
     setIsNavigating(true);
     setRouteGeometry(null);
     setNavigationProgress(0);
@@ -623,40 +635,50 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     const route = await getCyclingRoute(here, { lat: dest.lat, lng: dest.lng });
     setRouteGeometry(route?.geometry ?? null);
     const tripKm = route?.distanceKm ?? haversineKm(here, { lat: dest.lat, lng: dest.lng });
-    // 以固定 10 km/h 估算行程時間
     const etaMin = (tripKm / CYCLING_SPEED_KMH) * 60;
     setNavDistanceKm(tripKm);
     setNavEtaMin(etaMin);
 
-    setTimeout(() => {
-      setNavigationProgress(25);
+    const steps = route?.steps ?? [];
+
+    if (steps.length > 0) {
+      // 逐步顯示真實轉向提示
+      const stepMs = 1400;
       setNavigationMessage(
         `規劃完成：全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘。`
-        + (route ? '' : '（無詳細路線，顯示直線方向）')
       );
-    }, 1000);
-
-    setTimeout(() => {
-      setNavigationProgress(60);
-      setNavigationMessage('導航中：沿規劃路線前進，注意行人與路口。');
-    }, 2600);
-
-    setTimeout(() => {
-      setNavigationProgress(90);
-      setNavigationMessage('接近目的地：前方即為 ' + dest.name);
-    }, 4200);
-
-    setTimeout(() => {
-      setNavigationProgress(100);
-      setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。');
-      // 以真實路線距離累計騎乘里程，供減碳計算使用
-      if (onTripComplete) {
-        onTripComplete(tripKm);
-      }
-    }, 5800);
+      steps.forEach((s, i) => {
+        const last = i === steps.length - 1;
+        const t = window.setTimeout(() => {
+          setNavigationProgress(Math.round(((i + 1) / steps.length) * 100));
+          setNavigationMessage(s.text + (!last && s.distance > 0 ? `（約 ${s.distance} 米）` : ''));
+          if (last && onTripComplete) onTripComplete(tripKm);
+        }, 900 + i * stepMs);
+        navTimersRef.current.push(t);
+      });
+    } else {
+      // 退回：無逐步轉向（Mapbox 失敗或未設定 token）
+      const push = (ms: number, fn: () => void) => navTimersRef.current.push(window.setTimeout(fn, ms));
+      push(1000, () => {
+        setNavigationProgress(30);
+        setNavigationMessage(
+          `全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘（顯示直線方向）。`
+        );
+      });
+      push(2800, () => {
+        setNavigationProgress(70);
+        setNavigationMessage('導航中：沿單車徑前進，注意行人與路口。');
+      });
+      push(4600, () => {
+        setNavigationProgress(100);
+        setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。');
+        if (onTripComplete) onTripComplete(tripKm);
+      });
+    }
   };
 
   const stopNavigation = () => {
+    clearNavTimers();
     setIsNavigating(false);
     setNavigationProgress(0);
     setRouteGeometry(null);
@@ -677,6 +699,50 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       });
   };
 
+  // 地點搜尋（學校 / 公園 / 地標）：輸入時去抖動查詢
+  const handlePlaceInput = (q: string) => {
+    setSearchQuery(q);
+    window.clearTimeout(placeTimerRef.current);
+    placeAbortRef.current?.abort();
+    if (!q.trim()) {
+      setPlaceResults([]);
+      setPlaceSearching(false);
+      return;
+    }
+    setPlaceSearching(true);
+    placeTimerRef.current = window.setTimeout(async () => {
+      const controller = new AbortController();
+      placeAbortRef.current = controller;
+      const results = await searchPlaces(q, userPosRef.current, controller.signal);
+      setPlaceResults(results);
+      setPlaceSearching(false);
+    }, 350);
+  };
+
+  // 選取搜尋結果：飛到該點並放上標記
+  const selectPlace = (p: PlaceResult) => {
+    setSearchQuery(p.name);
+    setPlaceResults([]);
+    if (!mapRef.current) return;
+    if (searchMarkerRef.current) searchMarkerRef.current.remove();
+    const icon = L.divIcon({
+      html: `<div class="flex flex-col items-center">
+        <div class="p-2 rounded-full bg-amber-500 border-2 border-white text-white shadow-lg flex items-center justify-center">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        </div>
+        <div class="w-2 h-2 rotate-45 -mt-1 bg-amber-500 border-r border-b border-white/30"></div>
+      </div>`,
+      className: 'place-search-marker',
+      iconSize: [34, 34],
+      iconAnchor: [17, 34],
+    });
+    searchMarkerRef.current = L.marker([p.lat, p.lng], { icon })
+      .addTo(mapRef.current)
+      .bindPopup(`<div class="text-xs font-bold">${p.name}</div>`)
+      .openPopup();
+    mapRef.current.flyTo([p.lat, p.lng], 16, { duration: 1 });
+  };
+
   const isSaved = selectedSpot ? savedParkingIds.includes(selectedSpot.id) : false;
   const isKeyRegistered = Boolean(csdiKey) && csdiKey.trim() !== '' && csdiKey !== 'YOUR_API_KEY';
 
@@ -691,34 +757,57 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
             id="map-search-input"
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜尋單車徑或泊位..."
+            onChange={(e) => handlePlaceInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && placeResults.length > 0) selectPlace(placeResults[0]);
+            }}
+            placeholder="搜尋學校、公園、地點…"
             className="flex-1 bg-transparent border-none p-0 focus:ring-0 text-xs font-bold text-zinc-800 placeholder:text-zinc-400 outline-none"
           />
-          
-          {/* CSDI Badge / Key Status Trigger */}
-          <button
-            onClick={() => setIsKeyPanelOpen(!isKeyPanelOpen)}
-            className={`mr-2.5 px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
-              isKeyRegistered 
-                ? 'bg-[#006b2c]/10 text-[#006b2c] hover:bg-[#006b2c]/20' 
-                : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-            }`}
-            title="空間數據 API 密鑰"
-          >
-            <Key className="w-3.5 h-3.5" strokeWidth={2.5} />
-            <span>{isKeyRegistered ? 'CSDI 已啟用' : '免密鑰模式'}</span>
-          </button>
 
-          <button 
+          {placeSearching && <Loader2 className="w-4 h-4 mr-1.5 text-zinc-400 animate-spin shrink-0" />}
+          {searchQuery && !placeSearching && (
+            <button
+              onClick={() => { setSearchQuery(''); setPlaceResults([]); }}
+              className="mr-1.5 text-zinc-400 hover:text-zinc-600 shrink-0"
+              title="清除"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+
+          <button
             id="map-tune-btn"
-            onClick={() => setIsLayersOpen(!isLayersOpen)} 
-            className="text-[#006b2c] hover:text-[#005320] transition-colors p-1.5 hover:bg-zinc-100 rounded-full"
+            onClick={() => setIsLayersOpen(!isLayersOpen)}
+            className="text-[#006b2c] hover:text-[#005320] transition-colors p-1.5 hover:bg-zinc-100 rounded-full shrink-0"
             title="地圖樣式"
           >
             <SlidersHorizontal id="map-tune-icon" className="w-4.5 h-4.5" />
           </button>
         </div>
+
+        {/* 地點搜尋結果下拉 */}
+        <AnimatePresence>
+          {placeResults.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mt-2 bg-white rounded-2xl shadow-2xl border border-zinc-100 overflow-hidden divide-y divide-zinc-50"
+            >
+              {placeResults.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => selectPlace(p)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-[#006b2c]/5 transition-colors flex items-center gap-2.5 cursor-pointer"
+                >
+                  <MapPin className="w-4 h-4 text-[#006b2c] shrink-0" />
+                  <span className="text-xs font-bold text-zinc-700 leading-tight line-clamp-2">{p.name}</span>
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Dynamic CSDI API Key Panel */}
         <AnimatePresence>
