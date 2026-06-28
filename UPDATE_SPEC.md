@@ -29,6 +29,9 @@
 | 15 | 移除預設示範單車 | `INITIAL_BIKES` 清空，不再預設兩台假單車；使用者自行登記並同步 Firestore | ✅ 完成 |
 | 16 | 5.4 示範資料標示 | 單車詳情 NFC 金鑰改顯示真實 `nfcTagId`、最近定位標「示範」；ReportTab 回收站 / 環保夥伴加「示範資料」標籤；減碳單次行程加 50km 上限防灌水 | ✅ 完成 |
 | 17 | 5.5 套件清理 | 移除未使用依賴 `@google/genai`、`@vis.gl/react-google-maps`、`@types/google.maps`、`express`、`@types/express`、`dotenv`，build 通過 | ✅ 完成 |
+| 18 | Mapbox 真實單車導航 | 新增 `src/mapbox.ts`（Directions + 反向地理編碼）；MapTab 導航改用 Mapbox 規劃真實單車路線並沿道路繪製，減碳改用真實路線距離，失敗自動退回直線 | ✅ 完成 |
+| 19 | 真實 GPS + 手動輸入位置 | 新增 `src/geolocation.ts`；ReportTab「目前位置」由隨機假資料改為可手動輸入，「GPS 定位」改用瀏覽器真實定位 + Mapbox 反向地理編碼填入地址 | ✅ 完成 |
+| 20 | 修復手機水平溢出 | ReportTab 標題徽章可換行縮短、App 外層 `w-screen`→`w-full` 避免 iOS 100vw 超寬 | ✅ 完成 |
 
 > 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit。
 

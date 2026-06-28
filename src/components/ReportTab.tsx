@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RECYCLE_STATIONS, ECO_PARTNERS } from '../data';
 import { RecycleStation, EcoPartner, Report } from '../types';
+import { getCurrentPosition, isGeolocationSupported } from '../geolocation';
+import { reverseGeocode } from '../mapbox';
 import { Camera, MapPin, Send, ChevronRight, Star, Info, X, Phone, CheckCircle, Navigation, Award } from 'lucide-react';
 
 interface ReportTabProps {
@@ -11,7 +13,7 @@ interface ReportTabProps {
 
 export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
   const [desc, setDesc] = useState('');
-  const [locationStr, setLocationStr] = useState('香港仔海傍道 12 號');
+  const [locationStr, setLocationStr] = useState('');
   const [isLocating, setIsLocating] = useState(false);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
@@ -24,23 +26,28 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Mock locations list to alternate when user clicks GPS
-  const GPS_LOCATIONS = [
-    '沙田城門河源禾路單車徑段',
-    '大圍港鐵站 A 出口自行車停放專區',
-    '大埔墟近廣福邨單車天橋段',
-    '香港仔海傍道 12 號 (目前位置)'
-  ];
-  const [locationIndex, setLocationIndex] = useState(0);
-
-  const handleGetLocation = () => {
+  // 以真實 GPS 取得目前位置，並用 Mapbox 反向地理編碼轉成地址填入欄位
+  const handleGetLocation = async () => {
+    if (!isGeolocationSupported()) {
+      onNotify('此裝置或瀏覽器不支援定位功能，請手動輸入位置。', 'warning');
+      return;
+    }
     setIsLocating(true);
-    setTimeout(() => {
-      const nextIndex = (locationIndex + 1) % GPS_LOCATIONS.length;
-      setLocationIndex(nextIndex);
-      setLocationStr(GPS_LOCATIONS[nextIndex]);
+    try {
+      const pos = await getCurrentPosition();
+      const address = await reverseGeocode(pos);
+      // 有地址用地址，否則退回經緯度
+      setLocationStr(address || `緯度 ${pos.lat.toFixed(5)}, 經度 ${pos.lng.toFixed(5)}`);
+      onNotify('已取得目前位置', 'success');
+    } catch (err: any) {
+      const denied = err && (err.code === 1 || err.message === 'NOT_SUPPORTED');
+      onNotify(
+        denied ? '定位被拒絕或不支援，請手動輸入位置。' : '定位失敗，請手動輸入位置。',
+        'warning'
+      );
+    } finally {
       setIsLocating(false);
-    }, 1000);
+    }
   };
 
   const triggerUpload = () => {
@@ -70,6 +77,10 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!locationStr.trim()) {
+      onNotify('請輸入違規位置，或按「GPS 定位」。', 'warning');
+      return;
+    }
     if (!desc.trim()) {
       onNotify('請填寫詳細描述後再提交舉報。', 'warning');
       return;
@@ -140,26 +151,27 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
             )}
           </div>
 
-          {/* Location Area */}
+          {/* Location Area（可手動輸入，或按 GPS 自動填入真實位置） */}
           <div className="space-y-1">
-            <label id="location-label" className="text-xs font-bold text-zinc-500 block uppercase tracking-wider">目前位置</label>
+            <label id="location-label" className="text-xs font-bold text-zinc-500 block uppercase tracking-wider">違規位置</label>
             <div className="relative">
               <MapPin id="loc-pin-icon" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#006b2c] w-4.5 h-4.5" />
               <input
                 id="location-display-input"
                 type="text"
                 value={locationStr}
-                readOnly
-                className="w-full bg-zinc-50 border border-zinc-100 rounded-xl py-3 pl-11 pr-20 text-xs font-medium text-zinc-800 outline-none focus:ring-0"
+                onChange={(e) => setLocationStr(e.target.value)}
+                placeholder="請手動輸入位置，或按右側「GPS 定位」"
+                className="w-full bg-zinc-50 border border-zinc-200/80 rounded-xl py-3 pl-11 pr-24 text-xs font-medium text-zinc-800 placeholder:text-zinc-400 outline-none focus:ring-2 focus:ring-[#006b2c] focus:border-transparent transition-all"
               />
               <button
                 id="location-gps-btn"
                 type="button"
                 onClick={handleGetLocation}
                 disabled={isLocating}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold bg-[#006b2c]/10 text-[#006b2c] hover:bg-[#006b2c]/20 py-1.5 px-3 rounded-lg transition-colors cursor-pointer"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold bg-[#006b2c]/10 text-[#006b2c] hover:bg-[#006b2c]/20 py-1.5 px-3 rounded-lg transition-colors cursor-pointer disabled:opacity-60"
               >
-                {isLocating ? 'GPS 定位中' : 'GPS 定位'}
+                {isLocating ? '定位中…' : 'GPS 定位'}
               </button>
             </div>
           </div>

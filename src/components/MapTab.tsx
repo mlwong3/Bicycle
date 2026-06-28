@@ -4,6 +4,7 @@ import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { haversineKm } from '../carbon';
+import { getCyclingRoute } from '../mapbox';
 import ParkingInfoCard from './map/ParkingInfoCard';
 import NavigationPanel from './map/NavigationPanel';
 import { readStoredJson, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from '../storage';
@@ -117,6 +118,8 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const [isNavigating, setIsNavigating] = useState(false);
   const [navigationProgress, setNavigationProgress] = useState(0);
   const [navigationMessage, setNavigationMessage] = useState('');
+  // Mapbox 規劃出的真實單車路線幾何（null 時退回直線）
+  const [routeGeometry, setRouteGeometry] = useState<any | null>(null);
   const [isLayersOpen, setIsLayersOpen] = useState(false);
   const [isKeyPanelOpen, setIsKeyPanelOpen] = useState(false);
 
@@ -157,7 +160,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const labelLayerRef = useRef<L.TileLayer | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
-  const polylineRef = useRef<L.Polyline | null>(null);
+  const polylineRef = useRef<L.Polyline | L.GeoJSON | null>(null);
   const wmsLayersRef = useRef<Record<string, L.TileLayer.WMS>>({});
 
   // 官方單車數據圖層 refs
@@ -413,8 +416,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
 
     if (isNavigating && selectedSpot) {
       const destCoords = { lat: selectedSpot.lat, lng: selectedSpot.lng };
-      if (destCoords) {
-        // Draw standard ecological green dashed line
+
+      if (routeGeometry) {
+        // 有 Mapbox 真實單車路線：沿實際道路畫實線
+        const layer = L.geoJSON(routeGeometry, {
+          style: { color: '#006b2c', weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' },
+        }).addTo(mapRef.current);
+        polylineRef.current = layer;
+        mapRef.current.fitBounds(layer.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
+      } else {
+        // 退回直線（Mapbox 失敗或尚未回傳）
         polylineRef.current = L.polyline(
           [
             [USER_COORDINATES.lat, USER_COORDINATES.lng],
@@ -430,16 +441,11 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
           }
         ).addTo(mapRef.current);
 
-        // Zoom fit to cover both points
         const group = L.featureGroup([userMarkerRef.current!, markersRef.current[selectedSpot.id]].filter(Boolean));
-        mapRef.current.fitBounds(group.getBounds(), {
-          padding: [50, 50],
-          animate: true,
-          duration: 1.2
-        });
+        mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
       }
     }
-  }, [isNavigating, selectedSpot]);
+  }, [isNavigating, selectedSpot, routeGeometry]);
 
   // A. 載入並渲染運輸署「單車徑」圖層（綠線疊加，由開關控制）
   useEffect(() => {
@@ -566,46 +572,57 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     };
   }, []);
 
-  // Simulation engine for Navigation progression
-  const startNavigation = () => {
+  // Navigation：用 Mapbox 規劃真實單車路線，失敗則退回直線；以真實距離計算減碳
+  const startNavigation = async () => {
     if (!selectedSpot) return;
     const dest = selectedSpot;
     setIsNavigating(true);
+    setRouteGeometry(null);
     setNavigationProgress(0);
-    setNavigationMessage('正在透過政府空間數據(CSDI)優化路網規劃...');
+    setNavigationMessage('正在規劃單車路線（Mapbox Directions）...');
 
     if (onNavigateStart) {
       onNavigateStart(dest.name);
     }
 
+    // 取得真實單車路線；失敗時 route 為 null，沿用直線與大圓距離
+    const route = await getCyclingRoute(USER_COORDINATES, { lat: dest.lat, lng: dest.lng });
+    setRouteGeometry(route?.geometry ?? null);
+    const tripKm = route?.distanceKm ?? haversineKm(USER_COORDINATES, { lat: dest.lat, lng: dest.lng });
+
     setTimeout(() => {
       setNavigationProgress(25);
-      setNavigationMessage('導航中：直行 100 米，進入城門河單車徑。');
-    }, 1200);
+      setNavigationMessage(
+        route
+          ? `規劃完成：全長約 ${route.distanceKm.toFixed(1)} 公里，預計 ${Math.round(route.durationMin)} 分鐘。`
+          : '導航中：沿單車徑前進（無法取得詳細路線，顯示直線方向）。'
+      );
+    }, 1000);
 
     setTimeout(() => {
       setNavigationProgress(60);
-      setNavigationMessage('導航中：向右急轉彎，沿單車徑旁繼續前進。');
-    }, 2800);
+      setNavigationMessage('導航中：沿規劃路線前進，注意行人與路口。');
+    }, 2600);
 
     setTimeout(() => {
       setNavigationProgress(90);
-      setNavigationMessage('接近目的地：前方 20 米右側為 ' + dest.name);
-    }, 4500);
+      setNavigationMessage('接近目的地：前方即為 ' + dest.name);
+    }, 4200);
 
     setTimeout(() => {
       setNavigationProgress(100);
       setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。');
-      // 以實際路線距離（使用者→泊位）累計騎乘里程，供減碳計算使用
+      // 以真實路線距離累計騎乘里程，供減碳計算使用
       if (onTripComplete) {
-        onTripComplete(haversineKm(USER_COORDINATES, { lat: dest.lat, lng: dest.lng }));
+        onTripComplete(tripKm);
       }
-    }, 6000);
+    }, 5800);
   };
 
   const stopNavigation = () => {
     setIsNavigating(false);
     setNavigationProgress(0);
+    setRouteGeometry(null);
   };
 
   const handleMyLocation = () => {
