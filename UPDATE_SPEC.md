@@ -36,8 +36,9 @@
 | 22 | 逐步轉向 + 地點搜尋 | 導航改用 Mapbox `steps` 顯示真實逐步轉向（自製繁中：左轉/右轉/迴旋處/到達，含「前方 X 米」）；地圖頂部搜尋框由「過濾泊位」改為「地點搜尋」（學校/公園/地標，去抖動 + 結果下拉 + 飛至標記），並移除旁邊「免密鑰模式」按鈕 | ✅ 完成 |
 | 23 | 真實 GPS 導航追蹤 | 導航不再是純定時器播放：新增 `watchPosition`（`geolocation.ts`）持續追蹤真實位置；取得定位成功時進度、轉向提示皆依「目前座標 vs. Mapbox 路線／轉向點」即時計算，抵達目的地（25 米內）自動結束並計入減碳；僅在瀏覽器拒絕/不支援定位時才退回示範播放，面板明確標示「真實 GPS 導航中」或「路線預覽（示範模式）」，避免誤導評審 | ✅ 完成 |
 | 24 | ESP32 IoT 即時泊位 + 簡單預測 | 新增 `src/realtime.ts`（訂閱 Realtime Database `/parking` 即時泊位裝置）、`src/predict.ts`（k 最近時段平均 + 線性趨勢外推的可解釋預測模型，預測 1 小時後空位）；MapTab 顯示 IoT 裝置標記與「即時空位 / 預測」彈窗、右上角上線數徽章；新增 `esp32/parking_sensor.ino`（HC-SR04 超聲波 + Firebase ESP Client）與 `esp32/README.md`（購買清單、分壓接線圖、RTDB 規則、燒錄步驟） | ✅ 完成（硬件需自行購買燒錄） |
+| 25 | 部署權杖範圍限制 | 目前用於自動推送的 GitHub 權杖只有 `repo` 範圍，缺 `workflow`，無法透過工具直接修改 `.github/workflows/*.yml`；`firebase-deploy.yml` 內 `VITE_FIREBASE_DATABASE_URL` 一行已還原，待手動於 GitHub 網頁編輯器補回（見待完成工作） | ⚠️ 待手動補回 |
 
-> 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit。
+> 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit + push（`main` @ 9d06a95）。
 
 ---
 
@@ -54,6 +55,10 @@
 - [ ] **刪除 `.github/workflows/static.yml`**：它把原始碼根目錄當網站上傳，導致 GitHub Pages 一直空白（`main.tsx 404`）。刪掉後 Pages 才會用 `deploy.yml` 的編譯產物。
 - [ ] **確認 Firebase 部署成功**：Actions 的 `Deploy to Firebase Hosting` 綠勾，網址 `https://bicycle-ee76c.web.app`。
 - [ ] （選用）設定「自動更新 GitHub」：需一組 GitHub 細粒度權杖（fine-grained PAT，限 Bicycle repo、Contents 讀寫）以便由工具直接 `git push`。
+- [ ] **手動補回 workflow 一行**：`.github/workflows/firebase-deploy.yml` 的 `env:` 加回 `VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}`（現用權杖無 `workflow` scope 無法自動推送，需在 GitHub 網頁編輯器手動加）。
+- [ ] **建立 Realtime Database + 設定 RTDB 規則**：Firebase Console → 你的專案 → Realtime Database → 建立資料庫（建議 `asia-southeast1`），並貼上 `esp32/README.md` 內的規則。
+- [ ] **加 GitHub Secret `VITE_FIREBASE_DATABASE_URL`**：值為建立好的 RTDB 網址，否則 IoT 泊位功能在正式站不會顯示（會優雅隱藏，不影響其他功能）。
+- [ ] **購買並燒錄 ESP32 硬件**：依 `esp32/README.md` 購買 ESP32-WROOM-32 DevKit V1 + HC-SR04，接線後燒錄 `esp32/parking_sensor/parking_sensor.ino`。
 
 ### C. 功能完善
 - [ ] **NFC 私隱改善**：NFC 標籤只寫入 `tagId`、`bikeId`、`frameNo`、App URL，不寫入真實學生姓名或個人資料。
