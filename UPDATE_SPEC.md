@@ -37,6 +37,7 @@
 | 23 | 真實 GPS 導航追蹤 | 導航不再是純定時器播放：新增 `watchPosition`（`geolocation.ts`）持續追蹤真實位置；取得定位成功時進度、轉向提示皆依「目前座標 vs. Mapbox 路線／轉向點」即時計算，抵達目的地（25 米內）自動結束並計入減碳；僅在瀏覽器拒絕/不支援定位時才退回示範播放，面板明確標示「真實 GPS 導航中」或「路線預覽（示範模式）」，避免誤導評審 | ✅ 完成 |
 | 24 | ESP32 IoT 即時泊位 + 簡單預測 | 新增 `src/realtime.ts`（訂閱 Realtime Database `/parking` 即時泊位裝置）、`src/predict.ts`（k 最近時段平均 + 線性趨勢外推的可解釋預測模型，預測 1 小時後空位）；MapTab 顯示 IoT 裝置標記與「即時空位 / 預測」彈窗、右上角上線數徽章；新增 `esp32/parking_sensor.ino`（HC-SR04 超聲波 + Firebase ESP Client）與 `esp32/README.md`（購買清單、分壓接線圖、RTDB 規則、燒錄步驟） | ✅ 完成（硬件需自行購買燒錄） |
 | 25 | 部署權杖範圍限制 | 目前用於自動推送的 GitHub 權杖只有 `repo` 範圍，缺 `workflow`，無法透過工具直接修改 `.github/workflows/*.yml`；`firebase-deploy.yml` 內 `VITE_FIREBASE_DATABASE_URL` 一行已還原，待手動於 GitHub 網頁編輯器補回（見待完成工作） | ⚠️ 待手動補回 |
+| 26 | 導航路線顏色修正 + 單車徑優先路線規劃 | 修正導航路線與常駐單車徑疊加層同色（皆為 `#006b2c`）導致「路線畫錯」的視覺誤導：真實路線改藍色 `#0b6fd1`、直線估算改 amber 虛線，與官方單車徑綠線區分。新增 `src/trackRouting.ts`：自建空間雜湊格 + 二元堆 Dijkstra，直接用運輸署官方 CYCTRACK 幾何規劃路線（起訖點在容許誤差內連得上真實單車徑時，路線 100% 貼合官方單車徑；連不上/路網不通/繞遠時優雅退回 Mapbox 道路路線，再退回直線估算）。導航面板新增路線來源徽章（沿官方單車徑／一般道路路線／直線估算），已於本機以 CSDI 真實資料驗證路線確實貼合官方單車徑曲線 | ✅ 完成 |
 
 > 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit + push（`main` @ 9d06a95）。
 

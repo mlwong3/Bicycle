@@ -8,19 +8,33 @@ interface NavigationPanelProps {
   etaMin: number;
   /** gps = 以真實 GPS 追蹤推進；demo = 未取得定位時的示範播放 */
   mode: 'gps' | 'demo';
+  /** 路線真實來源：track = 沿官方單車徑；mapbox = 一般道路路線；straight = 直線估算 */
+  routeSource: 'track' | 'mapbox' | 'straight';
   onStop: () => void;
 }
 
+const ROUTE_SOURCE_LABEL: Record<NavigationPanelProps['routeSource'], { text: string; className: string }> = {
+  track: { text: '沿官方單車徑', className: 'bg-[#006b2c]/10 text-[#006b2c]' },
+  mapbox: { text: '一般道路路線', className: 'bg-[#0b6fd1]/10 text-[#0b6fd1]' },
+  straight: { text: '直線估算', className: 'bg-amber-500/10 text-amber-600' },
+};
+
 // 地圖下方導航進度面板（真實 GPS 追蹤或示範播放的進度條與轉向指示）。
 // 進出場動畫由外層 MapTab 的 motion.div 包裝負責。
-export default function NavigationPanel({ spotName, progress, message, distanceKm, etaMin, mode, onStop }: NavigationPanelProps) {
+export default function NavigationPanel({ spotName, progress, message, distanceKm, etaMin, mode, routeSource, onStop }: NavigationPanelProps) {
+  const sourceLabel = ROUTE_SOURCE_LABEL[routeSource];
   return (
     <div className="bg-zinc-900 border border-zinc-800 text-white rounded-3xl shadow-2xl p-4 font-sans">
       <div className="flex justify-between items-start mb-3">
         <div>
-          <h4 className="text-[9px] font-black text-[#006b2c] uppercase tracking-wider">
-            {mode === 'gps' ? '真實 GPS 導航中' : '路線預覽（示範模式）'}
-          </h4>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h4 className="text-[9px] font-black text-[#006b2c] uppercase tracking-wider">
+              {mode === 'gps' ? '真實 GPS 導航中' : '路線預覽（示範模式）'}
+            </h4>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded leading-none ${sourceLabel.className}`}>
+              {sourceLabel.text}
+            </span>
+          </div>
           <p className="text-xs font-bold text-white mt-0.5 leading-tight">{spotName}</p>
         </div>
         <button
@@ -62,7 +76,7 @@ export default function NavigationPanel({ spotName, progress, message, distanceK
         <span className={`w-1.5 h-1.5 rounded-full block ${mode === 'gps' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`} />
         <span>
           {mode === 'gps'
-            ? '正依 GPS 實時位置沿 Mapbox 單車路線推進'
+            ? `正依 GPS 實時位置沿${sourceLabel.text}推進`
             : '未取得 GPS 定位，以示範速度播放路線'}
         </span>
       </div>

@@ -8,6 +8,7 @@ import { getCyclingRoute, searchPlaces, PlaceResult, RouteStep } from '../mapbox
 import { getCurrentPosition, watchPosition } from '../geolocation';
 import { subscribeLiveParking, fetchParkingHistory, LiveParkingDevice, DEVICE_STALE_MS } from '../realtime';
 import { predictFree, ParkingPrediction } from '../predict';
+import { computeTrackRoute, LatLng as TrackLatLng } from '../trackRouting';
 import ParkingInfoCard from './map/ParkingInfoCard';
 import NavigationPanel from './map/NavigationPanel';
 import { readStoredJson, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from '../storage';
@@ -130,8 +131,12 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   // ESP32 感應器上傳的即時泊位裝置與各裝置的「1 小時後空位」預測
   const [liveDevices, setLiveDevices] = useState<LiveParkingDevice[]>([]);
   const [livePredictions, setLivePredictions] = useState<Record<string, ParkingPrediction | null>>({});
-  // Mapbox 規劃出的真實單車路線幾何（null 時退回直線）
+  // Mapbox 規劃出的真實單車路線幾何（null 時嘗試單車徑路線或退回直線）
   const [routeGeometry, setRouteGeometry] = useState<any | null>(null);
+  // 沿官方單車徑規劃出的路線座標點（routeGeometry 為 null 時才會使用）
+  const [trackRoutePoints, setTrackRoutePoints] = useState<TrackLatLng[] | null>(null);
+  // 目前導航路線的真實來源，供地圖線條顏色與面板徽章對應顯示
+  const [routeSource, setRouteSource] = useState<'track' | 'mapbox' | 'straight'>('straight');
   // 導航行程的真實距離與以 10 km/h 估算的時間
   const [navDistanceKm, setNavDistanceKm] = useState(0);
   const [navEtaMin, setNavEtaMin] = useState(0);
@@ -197,6 +202,8 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   // 導航逐步轉向計時器（示範播放用）、真實 GPS 追蹤停止函式、地點搜尋結果標記
   const navTimersRef = useRef<number[]>([]);
   const navWatchStopRef = useRef<(() => void) | null>(null);
+  // 單車徑優先路線規劃的請求中止控制器
+  const trackRoutingAbortRef = useRef<AbortController | null>(null);
   const searchMarkerRef = useRef<L.Marker | null>(null);
   const placeAbortRef = useRef<AbortController | null>(null);
   const placeTimerRef = useRef<number | undefined>(undefined);
@@ -439,6 +446,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
             clearNavTracking();
             setIsNavigating(false);
             setRouteGeometry(null);
+            setTrackRoutePoints(null);
           }
         });
 
@@ -512,22 +520,29 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       const destCoords = { lat: selectedSpot.lat, lng: selectedSpot.lng };
 
       if (routeGeometry) {
-        // 有 Mapbox 真實單車路線：沿實際道路畫實線
+        // 有 Mapbox 真實單車路線：沿實際道路畫實線（藍色，與常駐單車徑疊加層的綠色區分）
         const layer = L.geoJSON(routeGeometry, {
-          style: { color: '#006b2c', weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' },
+          style: { color: '#0b6fd1', weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' },
         }).addTo(mapRef.current);
         polylineRef.current = layer;
         mapRef.current.fitBounds(layer.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
+      } else if (trackRoutePoints) {
+        // 沿官方單車徑規劃的真實路線（同樣視為真實路線，藍色實線）
+        polylineRef.current = L.polyline(
+          trackRoutePoints.map((p) => [p.lat, p.lng] as [number, number]),
+          { color: '#0b6fd1', weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }
+        ).addTo(mapRef.current);
+        mapRef.current.fitBounds(polylineRef.current.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
       } else {
-        // 退回直線（Mapbox 失敗或尚未回傳）
+        // 退回直線（Mapbox 與單車徑規劃皆失敗或尚未回傳）：amber 虛線，明確標示為估算
         polylineRef.current = L.polyline(
           [
             [userPosRef.current.lat, userPosRef.current.lng],
             [destCoords.lat, destCoords.lng]
           ],
           {
-            color: '#006b2c',
-            weight: 6,
+            color: '#f59e0b',
+            weight: 5,
             opacity: 0.85,
             dashArray: '10, 8',
             lineCap: 'round',
@@ -539,7 +554,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
       }
     }
-  }, [isNavigating, selectedSpot, routeGeometry]);
+  }, [isNavigating, selectedSpot, routeGeometry, trackRoutePoints]);
 
   // A. 載入並渲染運輸署「單車徑」圖層（綠線疊加，由開關控制）
   useEffect(() => {
@@ -702,6 +717,8 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     navTimersRef.current = [];
     navWatchStopRef.current?.();
     navWatchStopRef.current = null;
+    trackRoutingAbortRef.current?.abort();
+    trackRoutingAbortRef.current = null;
   };
 
   // 到達判定閾值（公尺）：GPS 精度約 5-20 米，抵達目的地半徑內即視為完成
@@ -750,27 +767,60 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const startNavigation = async () => {
     if (!selectedSpot) return;
     const dest = selectedSpot;
+    const destPos = { lat: dest.lat, lng: dest.lng };
     clearNavTracking();
     setIsNavigating(true);
     setRouteGeometry(null);
+    setTrackRoutePoints(null);
     setNavigationProgress(0);
-    setNavigationMessage('正在規劃單車路線（Mapbox Directions）...');
+    setNavigationMessage('正在規劃路線...');
 
     if (onNavigateStart) {
       onNavigateStart(dest.name);
     }
 
-    // 取得真實單車路線；失敗時 route 為 null，沿用直線與大圓距離
     const here = userPosRef.current;
-    const route = await getCyclingRoute(here, { lat: dest.lat, lng: dest.lng });
-    setRouteGeometry(route?.geometry ?? null);
-    const tripKm = route?.distanceKm ?? haversineKm(here, { lat: dest.lat, lng: dest.lng });
+
+    // 優先嘗試沿官方單車徑（CYCTRACK）規劃路線；起訖點連不上真實單車徑、
+    // 路網不通、或路徑明顯繞遠時回傳 null，退回 Mapbox 道路路線。
+    const trackAbort = new AbortController();
+    trackRoutingAbortRef.current = trackAbort;
+    const trackRoute = await computeTrackRoute(here, destPos, trackAbort.signal);
+    if (trackAbort.signal.aborted) return; // 使用者已停止導航或重新導航
+
+    let tripKm: number;
+    let steps: RouteStep[] = [];
+    let entryPoint: TrackLatLng | null = null;
+    let exitPoint: TrackLatLng | null = null;
+
+    if (trackRoute) {
+      setRouteSource('track');
+      setTrackRoutePoints(trackRoute.points);
+      tripKm = trackRoute.distanceKm;
+      entryPoint = trackRoute.entryPoint;
+      exitPoint = trackRoute.exitPoint;
+      setNavigationMessage(`已找到沿官方單車徑的路線，全長約 ${tripKm.toFixed(1)} 公里。`);
+    } else {
+      setNavigationMessage('正在規劃單車路線（Mapbox Directions）...');
+      const route = await getCyclingRoute(here, destPos);
+      setRouteGeometry(route?.geometry ?? null);
+      if (route) {
+        setRouteSource('mapbox');
+        tripKm = route.distanceKm;
+        steps = route.steps;
+      } else {
+        setRouteSource('straight');
+        tripKm = haversineKm(here, destPos);
+        setNavigationMessage('未取得真實路線，將以估算直線導航...');
+      }
+    }
+
     const etaMin = (tripKm / CYCLING_SPEED_KMH) * 60;
     setNavDistanceKm(tripKm);
     setNavEtaMin(etaMin);
 
-    const steps = route?.steps ?? [];
     let nextStepIdx = 0;
+    let trackPhase: 'toEntry' | 'onTrack' | 'toDest' = 'toEntry';
     let arrived = false;
     let gotFirstFix = false;
 
@@ -783,7 +833,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         setUserPos(pos);
         if (arrived) return;
 
-        const distToDestM = haversineKm(pos, { lat: dest.lat, lng: dest.lng }) * 1000;
+        const distToDestM = haversineKm(pos, destPos) * 1000;
 
         if (distToDestM <= ARRIVAL_RADIUS_M) {
           arrived = true;
@@ -794,7 +844,35 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
           return;
         }
 
-        // 沿逐步轉向清單，找出使用者已通過的最後一步（距其座標在 20 米內即視為通過）
+        const totalM = tripKm * 1000;
+        const progress = totalM > 0 ? Math.min(99, Math.round(((totalM - distToDestM) / totalM) * 100)) : 0;
+        setNavigationProgress(Math.max(0, progress));
+
+        if (entryPoint && exitPoint) {
+          // 沿單車徑路線：三階段訊息（前往入口 → 沿單車徑前進 → 前往終點）
+          if (trackPhase === 'toEntry') {
+            const distToEntryM = haversineKm(pos, entryPoint) * 1000;
+            if (distToEntryM <= STEP_PASS_RADIUS_M) {
+              trackPhase = 'onTrack';
+            } else {
+              setNavigationMessage(`前往最近單車徑入口，約 ${Math.round(distToEntryM)} 米`);
+              return;
+            }
+          }
+          if (trackPhase === 'onTrack') {
+            const distToExitM = haversineKm(pos, exitPoint) * 1000;
+            if (distToExitM <= STEP_PASS_RADIUS_M) {
+              trackPhase = 'toDest';
+            } else {
+              setNavigationMessage(`沿官方單車徑前進，距離出口約 ${Math.round(distToExitM)} 米`);
+              return;
+            }
+          }
+          setNavigationMessage(`即將抵達，距終點約 ${Math.round(distToDestM)} 米。`);
+          return;
+        }
+
+        // Mapbox 逐步轉向（或無步驟時的直線退回）：沿現有步驟清單找出已通過的最後一步
         while (
           nextStepIdx < steps.length &&
           steps[nextStepIdx].location &&
@@ -802,10 +880,6 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         ) {
           nextStepIdx += 1;
         }
-
-        const totalM = tripKm * 1000;
-        const progress = totalM > 0 ? Math.min(99, Math.round(((totalM - distToDestM) / totalM) * 100)) : 0;
-        setNavigationProgress(Math.max(0, progress));
 
         const upcoming = steps[nextStepIdx];
         if (upcoming) {
@@ -840,6 +914,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     setIsNavigating(false);
     setNavigationProgress(0);
     setRouteGeometry(null);
+    setTrackRoutePoints(null);
   };
 
   const handleMyLocation = () => {
@@ -1306,6 +1381,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
                   distanceKm={navDistanceKm}
                   etaMin={navEtaMin}
                   mode={navMode}
+                  routeSource={routeSource}
                   onStop={stopNavigation}
                 />
               </motion.div>
