@@ -11,17 +11,19 @@ export interface LatLng {
 }
 
 export interface RouteStep {
-  /** 已轉成繁體中文的轉向提示文字 */
+  /** 已轉成繁體中文的轉向提示文字（含「前方 X 米」前綴，示範播放用） */
   text: string;
+  /** 純動作文字（不含距離前綴），真實 GPS 導航時搭配即時距離顯示 */
+  action: string;
   /** 此步距離（公尺） */
   distance: number;
+  /** 此轉向發生的位置（maneuver point），真實導航據此判斷是否已通過 */
+  location: LatLng | null;
 }
 
-/** 把 Mapbox maneuver 轉成乾淨的繁體中文提示（內建中文為簡體，故自行轉換）。 */
-export function maneuverToText(step: any): string {
+/** 把 Mapbox maneuver 轉成純動作繁中文字（內建中文為簡體，故自行轉換）。 */
+export function maneuverToAction(step: any): string {
   const m = step?.maneuver ?? {};
-  const dist = Math.round(step?.distance ?? 0);
-  const near = dist > 60 ? `前方 ${dist} 米，` : '';
   const turn: Record<string, string> = {
     left: '左轉',
     right: '右轉',
@@ -39,12 +41,21 @@ export function maneuverToText(step: any): string {
       return '已到達目的地 🎉';
     case 'roundabout':
     case 'rotary':
-      return `${near}進入迴旋處`;
+      return '進入迴旋處';
     case 'fork':
-      return `${near}${turn[m.modifier] ?? '靠路口前行'}`;
+      return turn[m.modifier] ?? '靠路口前行';
     default:
-      return `${near}${turn[m.modifier] ?? '繼續前進'}`;
+      return turn[m.modifier] ?? '繼續前進';
   }
+}
+
+/** 動作文字加上「前方 X 米」前綴（示範播放模式用）。 */
+export function maneuverToText(step: any): string {
+  const m = step?.maneuver ?? {};
+  const action = maneuverToAction(step);
+  const dist = Math.round(step?.distance ?? 0);
+  const near = dist > 60 && m.type !== 'depart' && m.type !== 'arrive' ? `前方 ${dist} 米，` : '';
+  return `${near}${action}`;
 }
 
 /** 取得兩點間的真實單車路線（沿道路 / 單車徑）與逐步轉向。失敗回傳 null，呼叫端可退回直線。 */
@@ -64,10 +75,16 @@ export async function getCyclingRoute(
     const route = (await res.json())?.routes?.[0];
     if (!route?.geometry) return null;
     const rawSteps = route?.legs?.[0]?.steps ?? [];
-    const steps: RouteStep[] = rawSteps.map((s: any) => ({
-      text: maneuverToText(s),
-      distance: Math.round(s?.distance ?? 0),
-    }));
+    const steps: RouteStep[] = rawSteps.map((s: any) => {
+      const loc = s?.maneuver?.location;
+      return {
+        text: maneuverToText(s),
+        action: maneuverToAction(s),
+        distance: Math.round(s?.distance ?? 0),
+        location:
+          Array.isArray(loc) && loc.length === 2 ? { lng: loc[0], lat: loc[1] } : null,
+      };
+    });
     return {
       distanceKm: route.distance / 1000,
       durationMin: route.duration / 60,

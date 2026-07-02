@@ -4,8 +4,10 @@ import { PARKING_SPOTS } from '../data';
 import { ParkingSpot } from '../types';
 import { fetchCyclingLayer, CYCLING_LAYERS } from '../opendata';
 import { haversineKm } from '../carbon';
-import { getCyclingRoute, searchPlaces, PlaceResult } from '../mapbox';
-import { getCurrentPosition } from '../geolocation';
+import { getCyclingRoute, searchPlaces, PlaceResult, RouteStep } from '../mapbox';
+import { getCurrentPosition, watchPosition } from '../geolocation';
+import { subscribeLiveParking, fetchParkingHistory, LiveParkingDevice, DEVICE_STALE_MS } from '../realtime';
+import { predictFree, ParkingPrediction } from '../predict';
 import ParkingInfoCard from './map/ParkingInfoCard';
 import NavigationPanel from './map/NavigationPanel';
 import { readStoredJson, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from '../storage';
@@ -28,7 +30,8 @@ import {
   Minus,
   Bike,
   Loader2,
-  X
+  X,
+  Cpu
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -122,6 +125,11 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const [isNavigating, setIsNavigating] = useState(false);
   const [navigationProgress, setNavigationProgress] = useState(0);
   const [navigationMessage, setNavigationMessage] = useState('');
+  // gps = 真實 GPS 追蹤推進；demo = 拿不到定位時的示範播放
+  const [navMode, setNavMode] = useState<'gps' | 'demo'>('demo');
+  // ESP32 感應器上傳的即時泊位裝置與各裝置的「1 小時後空位」預測
+  const [liveDevices, setLiveDevices] = useState<LiveParkingDevice[]>([]);
+  const [livePredictions, setLivePredictions] = useState<Record<string, ParkingPrediction | null>>({});
   // Mapbox 規劃出的真實單車路線幾何（null 時退回直線）
   const [routeGeometry, setRouteGeometry] = useState<any | null>(null);
   // 導航行程的真實距離與以 10 km/h 估算的時間
@@ -179,12 +187,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
   const polylineRef = useRef<L.Polyline | L.GeoJSON | null>(null);
   const wmsLayersRef = useRef<Record<string, L.TileLayer.WMS>>({});
 
+  // ESP32 即時泊位裝置標記
+  const deviceMarkersRef = useRef<Record<string, L.Marker>>({});
+
   // 官方單車數據圖層 refs
   const cyclingTrackLayerRef = useRef<L.GeoJSON | null>(null);
   const cyclingAbortRef = useRef<AbortController | null>(null);
   const parkingAbortRef = useRef<AbortController | null>(null);
-  // 導航逐步轉向計時器、地點搜尋結果標記
+  // 導航逐步轉向計時器（示範播放用）、真實 GPS 追蹤停止函式、地點搜尋結果標記
   const navTimersRef = useRef<number[]>([]);
+  const navWatchStopRef = useRef<(() => void) | null>(null);
   const searchMarkerRef = useRef<L.Marker | null>(null);
   const placeAbortRef = useRef<AbortController | null>(null);
   const placeTimerRef = useRef<number | undefined>(undefined);
@@ -222,6 +234,9 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         mapRef.current.remove();
         mapRef.current = null;
       }
+      // 元件卸載時停止任何進行中的 GPS 追蹤與示範計時器，避免記憶體洩漏
+      navTimersRef.current.forEach((t) => window.clearTimeout(t));
+      navWatchStopRef.current?.();
     };
   }, []);
 
@@ -332,13 +347,13 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     }
   }, [mapTheme, csdiKey, enabledWmsLayers]);
 
-  // Synchronize Markers (User position & Parking spot pins)
+  // 使用者位置藍點：獨立 effect，導航期間 GPS 高頻更新時只移動藍點，不重建泊位標記
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // 1. Manage User Location Marker
     if (userMarkerRef.current) {
-      userMarkerRef.current.remove();
+      userMarkerRef.current.setLatLng([userPos.lat, userPos.lng]);
+      return;
     }
 
     const userIcon = L.divIcon({
@@ -356,8 +371,11 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     userMarkerRef.current = L.marker([userPos.lat, userPos.lng], { icon: userIcon })
       .addTo(mapRef.current)
       .bindPopup('<div class="font-bold text-xs">您的目前位置</div>');
+  }, [userPos]);
 
-    // 2. Manage Parking Spots Markers
+  // Synchronize Parking Spots Markers
+  useEffect(() => {
+    if (!mapRef.current) return;
     // Clear old markers
     for (const key in markersRef.current) {
       if (markersRef.current[key]) {
@@ -418,7 +436,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         .on('click', () => {
           setSelectedSpot(spot);
           if (isNavigating) {
-            clearNavTimers();
+            clearNavTracking();
             setIsNavigating(false);
             setRouteGeometry(null);
           }
@@ -427,7 +445,46 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
       markersRef.current[spot.id] = marker;
     });
 
-  }, [selectedSpot, mapTheme, spots, userPos]);
+  }, [selectedSpot, mapTheme, spots, isNavigating]);
+
+  // 顯示 ESP32 即時泊位感應器裝置（有座標的才上圖，橙色晶片圖示區分於一般泊位）
+  useEffect(() => {
+    if (!mapRef.current) return;
+    for (const key in deviceMarkersRef.current) {
+      deviceMarkersRef.current[key].remove();
+    }
+    deviceMarkersRef.current = {};
+
+    liveDevices.forEach((d) => {
+      if (typeof d.lat !== 'number' || typeof d.lng !== 'number') return;
+      const stale = Date.now() - d.updatedAt > DEVICE_STALE_MS;
+      const pred = livePredictions[d.id];
+      const icon = L.divIcon({
+        html: `
+          <div class="flex flex-col items-center">
+            <div class="px-2 py-1 rounded-xl shadow-lg border-2 border-white flex items-center gap-1 text-[10px] font-black ${
+              stale ? 'bg-zinc-400 text-white' : 'bg-amber-500 text-white'
+            }">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+              <span>${d.free}/${d.total}</span>
+            </div>
+            <div class="w-2 h-2 rotate-45 -mt-1 border-r border-b border-white/30 ${stale ? 'bg-zinc-400' : 'bg-amber-500'}"></div>
+          </div>
+        `,
+        className: `device-marker-${d.id}`,
+        iconSize: [50, 34],
+        iconAnchor: [25, 34],
+      });
+      const popupHtml = `
+        <div class="text-xs font-bold">${d.name}</div>
+        <div class="text-[10px] text-zinc-500 mt-0.5">即時空位：${d.free} / ${d.total}${stale ? '（裝置離線）' : ''}</div>
+        ${pred ? `<div class="text-[10px] text-amber-600 mt-0.5">預測 1 小時後：約 ${pred.free} 個空位</div>` : ''}
+      `;
+      deviceMarkersRef.current[d.id] = L.marker([d.lat, d.lng], { icon })
+        .addTo(mapRef.current!)
+        .bindPopup(popupHtml);
+    });
+  }, [liveDevices, livePredictions]);
 
   // Handle centering map on selected spot
   useEffect(() => {
@@ -465,7 +522,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         // 退回直線（Mapbox 失敗或尚未回傳）
         polylineRef.current = L.polyline(
           [
-            [userPos.lat, userPos.lng],
+            [userPosRef.current.lat, userPosRef.current.lng],
             [destCoords.lat, destCoords.lng]
           ],
           {
@@ -482,7 +539,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         mapRef.current.fitBounds(group.getBounds(), { padding: [50, 50], animate: true, duration: 1.2 });
       }
     }
-  }, [isNavigating, selectedSpot, routeGeometry, userPos]);
+  }, [isNavigating, selectedSpot, routeGeometry]);
 
   // A. 載入並渲染運輸署「單車徑」圖層（綠線疊加，由開關控制）
   useEffect(() => {
@@ -610,17 +667,90 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     };
   }, []);
 
-  // 清掉所有導航計時器（停止 / 重新導航 / 點其他泊位時呼叫）
-  const clearNavTimers = () => {
+  // C. 訂閱 ESP32 超聲波感應器上傳到 Realtime Database 的即時泊位數據（RTDB 未設定時 devices 恆為 []）
+  useEffect(() => {
+    const unsubscribe = subscribeLiveParking((devices) => setLiveDevices(devices));
+    return unsubscribe;
+  }, []);
+
+  // 每部裝置每 60 秒重新拉一次歷史紀錄，計算「1 小時後預測空位」（簡單可解釋的統計模型，見 predict.ts）
+  useEffect(() => {
+    if (liveDevices.length === 0) return;
+    let cancelled = false;
+
+    const refresh = async () => {
+      const entries = await Promise.all(
+        liveDevices.map(async (d) => {
+          const history = await fetchParkingHistory(d.id);
+          return [d.id, predictFree(history, d.total, 60)] as const;
+        })
+      );
+      if (!cancelled) setLivePredictions(Object.fromEntries(entries));
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [liveDevices]);
+
+  // 清掉導航用的計時器與 GPS 追蹤（停止 / 重新導航 / 點其他泊位時呼叫）
+  const clearNavTracking = () => {
     navTimersRef.current.forEach((t) => window.clearTimeout(t));
     navTimersRef.current = [];
+    navWatchStopRef.current?.();
+    navWatchStopRef.current = null;
   };
 
-  // Navigation：用 Mapbox 規劃真實單車路線 + 逐步轉向；失敗退回直線。以真實距離計算減碳
+  // 到達判定閾值（公尺）：GPS 精度約 5-20 米，抵達目的地半徑內即視為完成
+  const ARRIVAL_RADIUS_M = 25;
+  // 視為「已通過」某轉向點的距離閾值（公尺）
+  const STEP_PASS_RADIUS_M = 20;
+
+  /** GPS 不可用時的示範播放：定時器模擬逐步轉向，僅作展示用途，不代表真實移動。 */
+  function playDemoNavigation(tripKm: number, etaMin: number, steps: RouteStep[]) {
+    if (steps.length > 0) {
+      const stepMs = 1400;
+      setNavigationMessage(
+        `規劃完成：全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘。（未取得 GPS，以下為示範播放）`
+      );
+      steps.forEach((s, i) => {
+        const last = i === steps.length - 1;
+        const t = window.setTimeout(() => {
+          setNavigationProgress(Math.round(((i + 1) / steps.length) * 100));
+          setNavigationMessage(s.text + (!last && s.distance > 0 ? `（約 ${s.distance} 米）` : ''));
+          if (last && onTripComplete) onTripComplete(tripKm);
+        }, 900 + i * stepMs);
+        navTimersRef.current.push(t);
+      });
+    } else {
+      const push = (ms: number, fn: () => void) => navTimersRef.current.push(window.setTimeout(fn, ms));
+      push(1000, () => {
+        setNavigationProgress(30);
+        setNavigationMessage(
+          `全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘（示範播放，未取得 GPS）。`
+        );
+      });
+      push(2800, () => {
+        setNavigationProgress(70);
+        setNavigationMessage('導航中：沿單車徑前進，注意行人與路口。');
+      });
+      push(4600, () => {
+        setNavigationProgress(100);
+        setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。');
+        if (onTripComplete) onTripComplete(tripKm);
+      });
+    }
+  }
+
+  // Navigation：用 Mapbox 規劃真實單車路線 + 逐步轉向；有 GPS 時以真實位置推進進度，
+  // 拿不到定位（桌面瀏覽器 / 拒絕授權）才退回示範播放。以真實距離計算減碳。
   const startNavigation = async () => {
     if (!selectedSpot) return;
     const dest = selectedSpot;
-    clearNavTimers();
+    clearNavTracking();
     setIsNavigating(true);
     setRouteGeometry(null);
     setNavigationProgress(0);
@@ -640,45 +770,73 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
     setNavEtaMin(etaMin);
 
     const steps = route?.steps ?? [];
+    let nextStepIdx = 0;
+    let arrived = false;
+    let gotFirstFix = false;
 
-    if (steps.length > 0) {
-      // 逐步顯示真實轉向提示
-      const stepMs = 1400;
-      setNavigationMessage(
-        `規劃完成：全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘。`
-      );
-      steps.forEach((s, i) => {
-        const last = i === steps.length - 1;
-        const t = window.setTimeout(() => {
-          setNavigationProgress(Math.round(((i + 1) / steps.length) * 100));
-          setNavigationMessage(s.text + (!last && s.distance > 0 ? `（約 ${s.distance} 米）` : ''));
-          if (last && onTripComplete) onTripComplete(tripKm);
-        }, 900 + i * stepMs);
-        navTimersRef.current.push(t);
-      });
+    // 單一連續 GPS 追蹤：每次定位更新後，用真實座標計算距下一個轉向點/終點的距離，
+    // 據此推進進度與提示；首次定位失敗（例如拒絕授權）才退回示範播放。
+    const stop = watchPosition(
+      (pos) => {
+        gotFirstFix = true;
+        setNavMode('gps');
+        setUserPos(pos);
+        if (arrived) return;
+
+        const distToDestM = haversineKm(pos, { lat: dest.lat, lng: dest.lng }) * 1000;
+
+        if (distToDestM <= ARRIVAL_RADIUS_M) {
+          arrived = true;
+          setNavigationProgress(100);
+          setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。 🎉');
+          if (onTripComplete) onTripComplete(tripKm);
+          clearNavTracking();
+          return;
+        }
+
+        // 沿逐步轉向清單，找出使用者已通過的最後一步（距其座標在 20 米內即視為通過）
+        while (
+          nextStepIdx < steps.length &&
+          steps[nextStepIdx].location &&
+          haversineKm(pos, steps[nextStepIdx].location as { lat: number; lng: number }) * 1000 < STEP_PASS_RADIUS_M
+        ) {
+          nextStepIdx += 1;
+        }
+
+        const totalM = tripKm * 1000;
+        const progress = totalM > 0 ? Math.min(99, Math.round(((totalM - distToDestM) / totalM) * 100)) : 0;
+        setNavigationProgress(Math.max(0, progress));
+
+        const upcoming = steps[nextStepIdx];
+        if (upcoming) {
+          const distToStepM = upcoming.location
+            ? haversineKm(pos, upcoming.location as { lat: number; lng: number }) * 1000
+            : 0;
+          const near = distToStepM > 40 ? `前方約 ${Math.round(distToStepM)} 米，` : '';
+          setNavigationMessage(`${near}${upcoming.action}`);
+        } else {
+          setNavigationMessage(`繼續前進，距目的地約 ${Math.round(distToDestM)} 米。`);
+        }
+      },
+      () => {
+        if (!gotFirstFix) {
+          setNavMode('demo');
+          playDemoNavigation(tripKm, etaMin, steps);
+        }
+      }
+    );
+
+    if (stop) {
+      navWatchStopRef.current = stop;
     } else {
-      // 退回：無逐步轉向（Mapbox 失敗或未設定 token）
-      const push = (ms: number, fn: () => void) => navTimersRef.current.push(window.setTimeout(fn, ms));
-      push(1000, () => {
-        setNavigationProgress(30);
-        setNavigationMessage(
-          `全長約 ${tripKm.toFixed(1)} 公里，以 ${CYCLING_SPEED_KMH} km/h 估算約 ${Math.round(etaMin)} 分鐘（顯示直線方向）。`
-        );
-      });
-      push(2800, () => {
-        setNavigationProgress(70);
-        setNavigationMessage('導航中：沿單車徑前進，注意行人與路口。');
-      });
-      push(4600, () => {
-        setNavigationProgress(100);
-        setNavigationMessage('已安全抵達！祝您單車停泊與出行愉快。');
-        if (onTripComplete) onTripComplete(tripKm);
-      });
+      // 瀏覽器不支援 Geolocation → 直接示範播放
+      setNavMode('demo');
+      playDemoNavigation(tripKm, etaMin, steps);
     }
   };
 
   const stopNavigation = () => {
-    clearNavTimers();
+    clearNavTracking();
     setIsNavigating(false);
     setNavigationProgress(0);
     setRouteGeometry(null);
@@ -686,7 +844,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
 
   const handleMyLocation = () => {
     if (!mapRef.current) return;
-    setIsNavigating(false);
+    if (isNavigating) stopNavigation();
     // 先移到已知位置，再嘗試重新取得最新 GPS
     mapRef.current.setView([userPosRef.current.lat, userPosRef.current.lng], 16, { animate: true, duration: 1 });
     getCurrentPosition()
@@ -1080,6 +1238,16 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
         </div>
       )}
 
+      {/* ESP32 即時泊位感應器狀態徽章（RTDB 未設定或無裝置上線時不顯示） */}
+      {liveDevices.length > 0 && (
+        <div className="absolute top-20 right-4 z-1000 pointer-events-none">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shadow-md text-[10px] font-black backdrop-blur-md border bg-amber-50/95 text-amber-600 border-amber-100">
+            <Cpu className="w-3 h-3" />
+            <span>{liveDevices.length} 個 IoT 感應器即時上線</span>
+          </div>
+        </div>
+      )}
+
       {/* Missing CSDI API Key Dynamic Warning Prompt Card */}
       {!isKeyRegistered && (mapTheme === 'csdi-topographic' || mapTheme === 'csdi-satellite') && (
         <div className="absolute top-24 left-4 right-4 max-w-sm mx-auto bg-zinc-900/95 backdrop-blur-md text-white p-3.5 rounded-2xl shadow-xl border border-zinc-800 z-1000">
@@ -1137,6 +1305,7 @@ export default function MapTab({ savedParkingIds, toggleSaveParking, onNavigateS
                   message={navigationMessage}
                   distanceKm={navDistanceKm}
                   etaMin={navEtaMin}
+                  mode={navMode}
                   onStop={stopNavigation}
                 />
               </motion.div>

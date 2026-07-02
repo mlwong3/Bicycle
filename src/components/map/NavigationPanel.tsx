@@ -6,17 +6,21 @@ interface NavigationPanelProps {
   message: string;
   distanceKm: number;
   etaMin: number;
+  /** gps = 以真實 GPS 追蹤推進；demo = 未取得定位時的示範播放 */
+  mode: 'gps' | 'demo';
   onStop: () => void;
 }
 
-// 地圖下方導航進度面板（模擬導航的進度條與語音指示）。
+// 地圖下方導航進度面板（真實 GPS 追蹤或示範播放的進度條與轉向指示）。
 // 進出場動畫由外層 MapTab 的 motion.div 包裝負責。
-export default function NavigationPanel({ spotName, progress, message, distanceKm, etaMin, onStop }: NavigationPanelProps) {
+export default function NavigationPanel({ spotName, progress, message, distanceKm, etaMin, mode, onStop }: NavigationPanelProps) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 text-white rounded-3xl shadow-2xl p-4 font-sans">
       <div className="flex justify-between items-start mb-3">
         <div>
-          <h4 className="text-[9px] font-black text-[#006b2c] uppercase tracking-wider">正在進行智能導航</h4>
+          <h4 className="text-[9px] font-black text-[#006b2c] uppercase tracking-wider">
+            {mode === 'gps' ? '真實 GPS 導航中' : '路線預覽（示範模式）'}
+          </h4>
           <p className="text-xs font-bold text-white mt-0.5 leading-tight">{spotName}</p>
         </div>
         <button
@@ -55,8 +59,12 @@ export default function NavigationPanel({ spotName, progress, message, distanceK
       </div>
 
       <div className="flex items-center gap-1.5 text-[9px] text-zinc-500 font-bold border-t border-zinc-800/60 pt-2.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-green-500 block animate-pulse" />
-        <span>GPS 與 CSDI 空間路網串接成功</span>
+        <span className={`w-1.5 h-1.5 rounded-full block ${mode === 'gps' ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`} />
+        <span>
+          {mode === 'gps'
+            ? '正依 GPS 實時位置沿 Mapbox 單車路線推進'
+            : '未取得 GPS 定位，以示範速度播放路線'}
+        </span>
       </div>
     </div>
   );

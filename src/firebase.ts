@@ -14,6 +14,11 @@ const FALLBACK_FIREBASE_CONFIG = {
   appId: '1:201437326962:web:d4ca20885391a9cc1d1ceb',
 };
 
+// Realtime Database URL（ESP32 泊位感應器數據）。在 Firebase Console 建立 RTDB 後，
+// 把顯示的網址填到 VITE_FIREBASE_DATABASE_URL（或直接改下方預設值）。
+// 香港/亞洲區建議選 asia-southeast1，網址格式如下；未建立時相關功能自動停用。
+const FALLBACK_DATABASE_URL = 'https://bicycle-ee76c-default-rtdb.asia-southeast1.firebasedatabase.app';
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || FALLBACK_FIREBASE_CONFIG.apiKey,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || FALLBACK_FIREBASE_CONFIG.authDomain,
@@ -21,7 +26,10 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || FALLBACK_FIREBASE_CONFIG.storageBucket,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || FALLBACK_FIREBASE_CONFIG.messagingSenderId,
   appId: import.meta.env.VITE_FIREBASE_APP_ID || FALLBACK_FIREBASE_CONFIG.appId,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || FALLBACK_DATABASE_URL,
 };
+
+export const realtimeDatabaseUrl: string = firebaseConfig.databaseURL;
 
 export const isFirebaseConfigured =
   Boolean(firebaseConfig.apiKey) &&
