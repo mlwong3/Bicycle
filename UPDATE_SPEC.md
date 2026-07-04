@@ -38,6 +38,7 @@
 | 24 | ESP32 IoT 即時泊位 + 簡單預測 | 新增 `src/realtime.ts`（訂閱 Realtime Database `/parking` 即時泊位裝置）、`src/predict.ts`（k 最近時段平均 + 線性趨勢外推的可解釋預測模型，預測 1 小時後空位）；MapTab 顯示 IoT 裝置標記與「即時空位 / 預測」彈窗、右上角上線數徽章；新增 `esp32/parking_sensor.ino`（HC-SR04 超聲波 + Firebase ESP Client）與 `esp32/README.md`（購買清單、分壓接線圖、RTDB 規則、燒錄步驟） | ✅ 完成（硬件需自行購買燒錄） |
 | 25 | 部署權杖範圍限制 | 目前用於自動推送的 GitHub 權杖只有 `repo` 範圍，缺 `workflow`，無法透過工具直接修改 `.github/workflows/*.yml`；`firebase-deploy.yml` 內 `VITE_FIREBASE_DATABASE_URL` 一行已還原，待手動於 GitHub 網頁編輯器補回（見待完成工作） | ⚠️ 待手動補回 |
 | 26 | 導航路線顏色修正 + 單車徑優先路線規劃 | 修正導航路線與常駐單車徑疊加層同色（皆為 `#006b2c`）導致「路線畫錯」的視覺誤導：真實路線改藍色 `#0b6fd1`、直線估算改 amber 虛線，與官方單車徑綠線區分。新增 `src/trackRouting.ts`：自建空間雜湊格 + 二元堆 Dijkstra，直接用運輸署官方 CYCTRACK 幾何規劃路線（起訖點在容許誤差內連得上真實單車徑時，路線 100% 貼合官方單車徑；連不上/路網不通/繞遠時優雅退回 Mapbox 道路路線，再退回直線估算）。導航面板新增路線來源徽章（沿官方單車徑／一般道路路線／直線估算），已於本機以 CSDI 真實資料驗證路線確實貼合官方單車徑曲線 | ✅ 完成 |
+| 27 | ESP32 韌體 NTP 對時修正 + 詳細接線/伺服器連接指引 | 使用者已購買 ESP32 + 3 個 HC-SR04。修正 `esp32/parking_sensor.ino` 一個會導致展示失敗的真實 bug：韌體從未做 NTP 對時，`time(nullptr)` 開機時回傳接近 0 的假時間，會讓網站的 `DEVICE_STALE_MS` 離線判斷（`realtime.ts`）永遠判定裝置離線、`predict.ts` 的時段分桶預測完全失真；加入 `configTime()` + 等待對時迴圈修正。`esp32/README.md` 擴充為逐步可操作指引：Firebase Console 建立 Realtime Database 的完整截圖式步驟、規則發布、啟用匿名登入、`curl` 免硬件驗證規則的方法、燒錄步驟、常見錯誤對照表 | ✅ 完成（待使用者親自完成 Console 操作與燒錄） |
 
 > 以上程式碼變更已於本機通過 `tsc` 型別檢查與 `vite build`（於無 `#` 字元的乾淨路徑），並完成本機 git commit + push（`main` @ 9d06a95）。
 
@@ -56,10 +57,11 @@
 - [ ] **刪除 `.github/workflows/static.yml`**：它把原始碼根目錄當網站上傳，導致 GitHub Pages 一直空白（`main.tsx 404`）。刪掉後 Pages 才會用 `deploy.yml` 的編譯產物。
 - [ ] **確認 Firebase 部署成功**：Actions 的 `Deploy to Firebase Hosting` 綠勾，網址 `https://bicycle-ee76c.web.app`。
 - [ ] （選用）設定「自動更新 GitHub」：需一組 GitHub 細粒度權杖（fine-grained PAT，限 Bicycle repo、Contents 讀寫）以便由工具直接 `git push`。
-- [ ] **手動補回 workflow 一行**：`.github/workflows/firebase-deploy.yml` 的 `env:` 加回 `VITE_FIREBASE_DATABASE_URL: ${{ secrets.VITE_FIREBASE_DATABASE_URL }}`（現用權杖無 `workflow` scope 無法自動推送，需在 GitHub 網頁編輯器手動加）。
-- [ ] **建立 Realtime Database + 設定 RTDB 規則**：Firebase Console → 你的專案 → Realtime Database → 建立資料庫（建議 `asia-southeast1`），並貼上 `esp32/README.md` 內的規則。
+- [x] **手動補回 workflow 一行**：使用者已透過 GitHub 網頁編輯器補回 `VITE_FIREBASE_DATABASE_URL`。
+- [ ] **建立 Realtime Database + 設定 RTDB 規則**：依 `esp32/README.md` 3.1-3.3 節，Firebase Console → 建立資料庫（`asia-southeast1`）→ 貼規則 → 啟用匿名登入。
 - [ ] **加 GitHub Secret `VITE_FIREBASE_DATABASE_URL`**：值為建立好的 RTDB 網址，否則 IoT 泊位功能在正式站不會顯示（會優雅隱藏，不影響其他功能）。
-- [ ] **購買並燒錄 ESP32 硬件**：依 `esp32/README.md` 購買 ESP32-WROOM-32 DevKit V1 + HC-SR04，接線後燒錄 `esp32/parking_sensor/parking_sensor.ino`。
+- [x] **購買 ESP32 + 3 個 HC-SR04 硬件**：已購買，接線圖與燒錄步驟見 `esp32/README.md`。
+- [ ] **接線並燒錄 `esp32/parking_sensor/parking_sensor.ino`**：依 `esp32/README.md` 第二節接線、第四節燒錄，序列埠監控確認「已上傳即時狀態」。
 
 ### C. 功能完善
 - [ ] **NFC 私隱改善**：NFC 標籤只寫入 `tagId`、`bikeId`、`frameNo`、App URL，不寫入真實學生姓名或個人資料。

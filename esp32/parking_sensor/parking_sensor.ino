@@ -87,6 +87,16 @@ void setup() {
   }
   Serial.println("\nWiFi 已連接：" + WiFi.localIP().toString());
 
+  // 對時：ESP32 開機時沒有真實時間，若不同步，寫入 Firebase 的 updatedAt/歷史時間戳
+  // 會是接近 0 的假時間，導致網站誤判裝置「離線」、預測模型的時段分桶全部失真。
+  configTime(8 * 3600, 0, "pool.ntp.org", "time.google.com"); // 香港 UTC+8，無夏令時
+  Serial.print("同步網絡時間中");
+  while (time(nullptr) < 100000) {
+    delay(200);
+    Serial.print(".");
+  }
+  Serial.println("\n時間已同步：" + String(time(nullptr)));
+
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
   // 使用 Firebase 匿名登入（與網站的匿名 Auth 對應，Realtime Database 規則需允許 auth != null）
