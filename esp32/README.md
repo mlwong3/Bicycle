@@ -87,7 +87,7 @@ HC-SR04          ESP32 DevKit V1
 ### 3.3 啟用匿名登入
 
 左側選單 **Build → Authentication → Sign-in method**，確認 **Anonymous（匿名）** 已啟用
-（若未啟用需按「新增登入提供者」開啟）。韌體用 `Firebase.signUp(&config, &auth, "", "")`
+（若未啟用需按「新增登入提供者」開啟）。韌體用 `UserAccount user(API_KEY); signup(...)`
 觸發匿名登入以取得寫入權限——**這一步沒做，韌體會連線成功但寫入被規則拒絕**。
 
 ### 3.4 不用硬件也能先驗證規則設定對不對
@@ -107,13 +107,15 @@ curl "https://bicycle-ee76c-default-rtdb.asia-southeast1.firebasedatabase.app/pa
    `https://espressif.github.io/arduino-esp32/package_esp32_index.json`（若之前沒裝過 ESP32 核心）。
 2. 工具 → 開發板 → 開發板管理員，搜尋安裝 **esp32 by Espressif Systems**。
 3. 工具 → 開發板，選擇你的板子（一般 ESP32 DevKit V1 選 **ESP32 Dev Module**）。
-4. 程式庫管理員（工具 → 管理程式庫）安裝 Firebase 函式庫。**注意**：這個函式庫在 Library
-   Manager 裡的正式登記名稱是「**Firebase Arduino Client Library for ESP8266 and ESP32**」
-   （作者 **Mobizt**），不是字面上的「Firebase ESP Client」——搜尋欄只打 `Firebase` 就好，
-   不要打整串名字，否則常常搜不到。
+4. 程式庫管理員（工具 → 管理程式庫）安裝 Firebase 函式庫：搜尋欄只打 `firebase`，選作者
+   **Mobizt** 的 **`FirebaseClient`**，按安裝。
+   - **重要**：作者的舊版函式庫「Firebase-ESP-Client」「Firebase-ESP32」都已經標示
+     `[DEPRECATED]`（已棄用、停止支援），本專案的程式碼已改寫成使用新版 `FirebaseClient`
+     的 API，**請勿**安裝舊版，否則程式碼會編譯失敗（呼叫的函式名稱不同）。
    - 若搜尋還是找不到：到
-     [github.com/mobizt/Firebase-ESP-Client/releases/latest](https://github.com/mobizt/Firebase-ESP-Client/releases/latest)
-     下載 Source code (zip)，改用「草稿碼 → 匯入程式庫 → 加入 .ZIP 程式庫」手動安裝。
+     [github.com/mobizt/FirebaseClient/releases/latest](https://github.com/mobizt/FirebaseClient/releases/latest)
+     下載 Source code (zip)，改用「草稿碼 → 匯入程式庫 → 加入 .ZIP 程式庫」手動安裝，
+     解壓後資料夾需重新命名為 `FirebaseClient`（不含版本號後綴）。
 5. 開啟 `esp32/parking_sensor/parking_sensor.ino`，修改檔案開頭的 `WIFI_SSID`、
    `WIFI_PASSWORD`（**必須是 2.4GHz 網路，ESP32 不支援 5GHz WiFi**）、`DEVICE_ID`、
    `DEVICE_NAME`、`DEVICE_LAT`/`DEVICE_LNG`（每部裝置的 ID 要不同）。
@@ -134,7 +136,7 @@ curl "https://bicycle-ee76c-default-rtdb.asia-southeast1.firebasedatabase.app/pa
 |---|---|---|
 | WiFi 一直連不上（持續印 `.`） | 接了 5GHz 網路，或 SSID/密碼打錯 | 改連 2.4GHz 頻段的 WiFi；用手機熱點務必開「2.4GHz」選項 |
 | 卡在「同步網絡時間中」不動 | 網路能連但無法連到 NTP 伺服器（部分公司/學校網路封鎖 NTP） | 換手機熱點測試；或改用 `"time.windows.com"` 等備援 NTP |
-| `token error` 或 signUp 沒有印出成功 | Firebase 匿名登入未啟用 | 回到 3.3 啟用 Anonymous |
+| 序列埠印出 `[Auth 錯誤]` | Firebase 匿名登入未啟用，或 API_KEY 打錯 | 回到 3.3 啟用 Anonymous；核對 `API_KEY` 是否與 `src/firebase.ts` 一致 |
 | `上傳失敗：PERMISSION_DENIED` | 規則未發布或路徑打錯 | 回到 3.2 重新貼規則並按發布 |
 | 距離讀數一直是 `-1.0` | Echo 接錯腳、或分壓電阻接反、或該腳被其他功能占用 | 核對第二節接線圖，確認 Trig/Echo 沒接反 |
 | 網站地圖右上角「IoT 感應器」徽章一直不出現 | RTDB 網址不一致（見 3.1）或韌體還沒上傳成功 | 核對 3 個網址是否一致；檢查序列埠有無錯誤 |
