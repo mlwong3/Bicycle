@@ -107,7 +107,13 @@ curl "https://bicycle-ee76c-default-rtdb.asia-southeast1.firebasedatabase.app/pa
    `https://espressif.github.io/arduino-esp32/package_esp32_index.json`（若之前沒裝過 ESP32 核心）。
 2. 工具 → 開發板 → 開發板管理員，搜尋安裝 **esp32 by Espressif Systems**。
 3. 工具 → 開發板，選擇你的板子（一般 ESP32 DevKit V1 選 **ESP32 Dev Module**）。
-4. 程式庫管理員（工具 → 管理程式庫）安裝：**Firebase ESP Client**（作者 mobizt）。
+4. 程式庫管理員（工具 → 管理程式庫）安裝 Firebase 函式庫。**注意**：這個函式庫在 Library
+   Manager 裡的正式登記名稱是「**Firebase Arduino Client Library for ESP8266 and ESP32**」
+   （作者 **Mobizt**），不是字面上的「Firebase ESP Client」——搜尋欄只打 `Firebase` 就好，
+   不要打整串名字，否則常常搜不到。
+   - 若搜尋還是找不到：到
+     [github.com/mobizt/Firebase-ESP-Client/releases/latest](https://github.com/mobizt/Firebase-ESP-Client/releases/latest)
+     下載 Source code (zip)，改用「草稿碼 → 匯入程式庫 → 加入 .ZIP 程式庫」手動安裝。
 5. 開啟 `esp32/parking_sensor/parking_sensor.ino`，修改檔案開頭的 `WIFI_SSID`、
    `WIFI_PASSWORD`（**必須是 2.4GHz 網路，ESP32 不支援 5GHz WiFi**）、`DEVICE_ID`、
    `DEVICE_NAME`、`DEVICE_LAT`/`DEVICE_LNG`（每部裝置的 ID 要不同）。
