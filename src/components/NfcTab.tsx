@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bike } from '../types';
-import { writeBikeTag, isNfcSupported } from '../nfc';
-import { Radio, ScanLine, CreditCard, ChevronRight, CheckCircle, ShieldAlert, Wifi, Info, RotateCw } from 'lucide-react';
+import { writeBikeTag, readBikeTag, isNfcSupported, BikeTagData } from '../nfc';
+import { Radio, ScanLine, CreditCard, ChevronRight, CheckCircle, ShieldAlert, Wifi, Info, RotateCw, ShieldCheck, X } from 'lucide-react';
+
+// 寫入 NFC 標籤的 App 網址（私隱優先：標籤只存編號與此網址，不含個資）
+const APP_URL = 'https://bicycle-ee76c.web.app';
 
 interface NfcTabProps {
   onAddBike: (newBike: Omit<Bike, 'id' | 'nfcBound'>) => void;
@@ -21,9 +24,17 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
   const [writing, setWriting] = useState(false);
   const [nfcMode, setNfcMode] = useState<'real' | 'sim'>('sim');
   const [nfcTagId, setNfcTagId] = useState('QJ-NFC-DEMO');
+  // 防盜驗證：感應標籤讀回的識別資料
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedTag, setVerifiedTag] = useState<BikeTagData | null>(null);
+  const verifyAbortRef = useRef<AbortController | null>(null);
 
   const createDemoTagId = (value: string) =>
     `QJ-NFC-${value.trim().replace(/[^a-zA-Z0-9]/g, '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
+
+  // 由車架編號產生單車識別碼（寫入標籤的 bikeId，對應帳戶記錄）
+  const createBikeId = (value: string) =>
+    `bike-${value.trim().toLowerCase().replace(/[^a-z0-9]/g, '') || Date.now().toString(36)}`;
 
   const startNfcScan = () => {
     setScanning(true);
@@ -58,13 +69,16 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
     }
 
     const tagId = nfcTagId || createDemoTagId(frameNo);
+    // 寫入標籤的私隱優先資料（只含編號與網址，不含姓名 / 型號）
+    const tagPayload: BikeTagData = { tagId, bikeId: createBikeId(frameNo), frameNo, appUrl: APP_URL };
+    // 存入帳戶 / 雲端的完整記錄（型號、車主留在帳戶，不寫入實體標籤）
     const newBike = { model, frameNo, ownerName, nfcTagId: tagId };
     setStep(3);
     setWriting(true);
 
     try {
       // 嘗試真實 NFC 寫入（需 Android Chrome 89+、HTTPS、使用者手勢）
-      await writeBikeTag(newBike);
+      await writeBikeTag(tagPayload);
       setNfcMode('real');
       onNotify('NFC 標籤已完成實體寫入。', 'success');
     } catch (err) {
@@ -77,6 +91,27 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
     onAddBike(newBike);
     setWriting(false);
     setIsSubmitSuccess(true);
+  };
+
+  // 防盜驗證：感應實體標籤，讀回並顯示識別資料（真 NFC 讀取）
+  const handleVerifyScan = async () => {
+    setVerifying(true);
+    verifyAbortRef.current?.abort();
+    const controller = new AbortController();
+    verifyAbortRef.current = controller;
+    try {
+      const tag = await readBikeTag(controller.signal);
+      setVerifiedTag(tag);
+      onNotify('已讀取 NFC 標籤，車輛身分驗證成功。', 'success');
+    } catch (err: any) {
+      if (err?.message === 'NOT_SUPPORTED') {
+        onNotify('此裝置不支援 Web NFC（僅 Android 版 Chrome 89+）。', 'warning');
+      } else {
+        onNotify('讀取失敗，請將手機貼近標籤再試一次。', 'error');
+      }
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleCompleteFlow = () => {
@@ -241,6 +276,26 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
         </div>
       </form>
 
+      {/* 防盜驗證：感應已寫入的實體標籤，讀回並顯示識別資料 */}
+      <div className="mt-4 bg-white border border-zinc-200/80 p-4 rounded-2xl">
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldCheck className="w-4 h-4 text-[#006b2c] shrink-0" />
+          <h4 className="text-xs font-black text-zinc-700">防盜驗證・感應標籤讀取</h4>
+        </div>
+        <p className="text-[10px] text-zinc-400 leading-relaxed mb-3">
+          懷疑單車被盜或想核對身分時，按此鈕並將手機貼近車上的 NFC 標籤，讀回標籤編號、車架號等識別資料。
+        </p>
+        <button
+          type="button"
+          onClick={handleVerifyScan}
+          disabled={verifying}
+          className="w-full border-2 border-[#006b2c] text-[#006b2c] hover:bg-[#006b2c]/5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+        >
+          <ScanLine className={`w-4 h-4 shrink-0 ${verifying ? 'animate-pulse' : ''}`} />
+          {verifying ? '感應中，請貼近標籤…' : '感應標籤・驗證單車身分'}
+        </button>
+      </div>
+
       {/* 4. Complete Flow Success Box Dialog */}
       <AnimatePresence>
         {isSubmitSuccess && (
@@ -272,10 +327,14 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
                 )}
               </p>
 
-              <div className="bg-zinc-50 p-3 rounded-xl text-xs text-zinc-500 mb-6 text-left space-y-1 my-2">
+              <div className="bg-zinc-50 p-3 rounded-xl text-xs text-zinc-500 mb-3 text-left space-y-1 my-2">
                 <p>• <strong>車架號：</strong> {frameNo}</p>
                 <p>• <strong>持有者：</strong> {ownerName}</p>
-                <p>• <strong>NFC 感應編碼：</strong> {nfcTagId}</p>
+                <p>• <strong>NFC 標籤編號：</strong> {nfcTagId}</p>
+              </div>
+              <div className="flex items-start gap-1.5 text-[10px] text-zinc-400 mb-6 text-left leading-relaxed">
+                <Info className="w-3.5 h-3.5 shrink-0 mt-px text-[#006b2c]" />
+                <span>私隱保護：NFC 標籤只寫入標籤編號、車架號與 App 網址，<strong>不含姓名</strong>；車主資料只保存在你的帳戶。</span>
               </div>
 
               <button
@@ -283,6 +342,45 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
                 className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-3 rounded-xl text-xs font-bold transition-transform active:scale-95 cursor-pointer block"
               >
                 前往我的單車清單
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. 防盜驗證讀取結果 */}
+      <AnimatePresence>
+        {verifiedTag && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-zinc-100 text-center relative"
+            >
+              <button
+                onClick={() => setVerifiedTag(null)}
+                className="absolute top-3 right-3 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                aria-label="關閉"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <ShieldCheck className="w-16 h-16 text-[#006b2c] mx-auto mb-3" />
+              <h3 className="text-base font-bold text-zinc-950 mb-1">標籤驗證成功</h3>
+              <p className="text-xs text-zinc-500 mb-4 leading-relaxed">已從實體 NFC 標籤讀回以下識別資料。</p>
+
+              <div className="bg-zinc-50 p-3 rounded-xl text-xs text-zinc-500 mb-6 text-left space-y-1">
+                <p>• <strong>標籤編號：</strong> {verifiedTag.tagId}</p>
+                <p>• <strong>單車識別碼：</strong> {verifiedTag.bikeId}</p>
+                <p>• <strong>車架號：</strong> {verifiedTag.frameNo}</p>
+                <p className="truncate">• <strong>App 網址：</strong> {verifiedTag.appUrl}</p>
+              </div>
+
+              <button
+                onClick={() => setVerifiedTag(null)}
+                className="w-full bg-[#006b2c] hover:bg-[#005320] text-white py-3 rounded-xl text-xs font-bold transition-transform active:scale-95 cursor-pointer block"
+              >
+                完成
               </button>
             </motion.div>
           </div>
