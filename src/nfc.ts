@@ -69,22 +69,37 @@ export async function writeBikeTag(tag: BikeTagData): Promise<void> {
 /**
  * 嘗試把單一 NDEF 記錄解析成 BikeTagData：不論它被寫入時宣告的
  * recordType/mediaType 是什麼（'mime'/'text'/'unknown' 等，取決於
- * 寫入工具的實作方式），只要內容解碼後是符合形狀的 JSON 就接受。
- * 這樣才能相容第三方 App（如 NFC Tools）寫入的標籤，不必要求它們
- * 產生跟 writeBikeTag() 完全一致的底層記錄格式。
+ * 寫入工具的實作方式），只要能解碼出文字內容就接受——不強制要求
+ * 內容一定是結構化 JSON。
+ *
+ * 讀取策略（由嚴謹到寬鬆）：
+ * 1. 先嘗試 JSON.parse，若成功且含 tagId/frameNo 欄位 → 直接回傳完整資料。
+ * 2. JSON.parse 失敗（例如純文字標籤、NFC Tools 寫入格式跟預期不同）
+ *    → 退回「純文字」模式：把整段解碼出來的文字當作標籤編號本身，
+ *    tagId/frameNo 都填這段文字，bikeId/appUrl 留空，一樣視為有效讀取，
+ *    不再因為格式不是 JSON 而直接判定讀取失敗。
  */
 function tryParseBikeTag(record: any): BikeTagData | null {
+  let text: string;
   try {
     const decoder = new TextDecoder(record.encoding || 'utf-8');
-    const text = decoder.decode(record.data);
+    text = decoder.decode(record.data);
+  } catch {
+    return null; // 這筆記錄連文字都解不出來，換下一筆
+  }
+
+  try {
     const parsed = JSON.parse(text);
     if (parsed && typeof parsed.tagId === 'string' && typeof parsed.frameNo === 'string') {
       return parsed as BikeTagData;
     }
   } catch {
-    // 不是有效 JSON 或形狀不符，略過此記錄，繼續看標籤內的下一筆
+    // 不是有效 JSON，繼續往下當純文字處理
   }
-  return null;
+
+  const trimmed = text.trim();
+  if (!trimmed) return null; // 空白內容，不算有效讀取
+  return { tagId: trimmed, bikeId: '', frameNo: trimmed, appUrl: '' };
 }
 
 /** 防盜驗證：感應車上的標籤，讀回識別資料（需在使用者點擊後呼叫） */
@@ -107,12 +122,12 @@ export async function readBikeTag(signal?: AbortSignal): Promise<BikeTagData> {
         }
       }
       console.warn(
-        '[NFC] 標籤內沒有符合格式的 JSON 記錄，實際記錄：',
+        '[NFC] 標籤內沒有可解碼出內容的記錄，實際記錄：',
         records.map((r: any) => ({ recordType: r.recordType, mediaType: r.mediaType, encoding: r.encoding }))
       );
       reject(
         new Error(
-          `標籤無有效資料：讀到 ${records.length} 筆記錄，但沒有一筆是符合格式的單車識別 JSON（需含 tagId 與 frameNo 欄位），請確認標籤內容`
+          `標籤無有效資料：讀到 ${records.length} 筆記錄，但都是空白或無法解碼成文字，請確認標籤內容`
         )
       );
     };

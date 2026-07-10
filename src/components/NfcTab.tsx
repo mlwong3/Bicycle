@@ -416,9 +416,9 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
 
               <div className="bg-zinc-50 p-3 rounded-xl text-xs text-zinc-500 mb-6 text-left space-y-1">
                 <p>• <strong>標籤編號：</strong> {verifiedTag.tagId}</p>
-                <p>• <strong>單車識別碼：</strong> {verifiedTag.bikeId}</p>
+                <p>• <strong>單車識別碼：</strong> {verifiedTag.bikeId || '—（純文字標籤，無結構化資料）'}</p>
                 <p>• <strong>車架號：</strong> {verifiedTag.frameNo}</p>
-                <p className="truncate">• <strong>App 網址：</strong> {verifiedTag.appUrl}</p>
+                <p className="truncate">• <strong>App 網址：</strong> {verifiedTag.appUrl || '—'}</p>
               </div>
 
               <button
