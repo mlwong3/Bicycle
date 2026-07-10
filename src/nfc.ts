@@ -28,6 +28,24 @@ export function isNfcSupported(): boolean {
   return typeof window !== 'undefined' && 'NDEFReader' in window;
 }
 
+export type NfcErrorReason = 'not-supported' | 'permission-denied' | 'aborted' | 'unknown';
+
+/**
+ * 把 scan()/write() 拋出的錯誤分類，供呼叫端顯示對應的使用者提示。
+ * Web NFC 本身沒有獨立的「請求權限」API——瀏覽器會在第一次呼叫 scan()/write()
+ * 時自動彈出「允許使用 NFC？」的系統權限提示（需在使用者手勢內呼叫）；
+ * 使用者若當時按「拒絕」，Chrome 會記住此選擇，之後同一網站呼叫會直接
+ * 拋出 NotAllowedError 且不再彈窗，需到 Chrome 網站設定手動改回允許。
+ */
+export function classifyNfcError(err: unknown): NfcErrorReason {
+  if (err instanceof Error && err.message === 'NOT_SUPPORTED') return 'not-supported';
+  const name = (err as any)?.name;
+  if (name === 'NotAllowedError') return 'permission-denied';
+  if (name === 'AbortError') return 'aborted';
+  if (name === 'NotSupportedError') return 'not-supported';
+  return 'unknown';
+}
+
 /** 把單車識別資料寫入貼在單車上的 NFC 標籤（私隱優先：不含姓名等個資） */
 export async function writeBikeTag(tag: BikeTagData): Promise<void> {
   if (!isNfcSupported()) {

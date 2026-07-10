@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bike } from '../types';
-import { writeBikeTag, readBikeTag, isNfcSupported, BikeTagData } from '../nfc';
+import { writeBikeTag, readBikeTag, isNfcSupported, classifyNfcError, BikeTagData } from '../nfc';
 import { Radio, ScanLine, CreditCard, ChevronRight, CheckCircle, ShieldAlert, Wifi, Info, RotateCw, ShieldCheck, X } from 'lucide-react';
 
 // 寫入 NFC 標籤的 App 網址（私隱優先：標籤只存編號與此網址，不含個資）
@@ -35,6 +35,21 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
   // 由車架編號產生單車識別碼（寫入標籤的 bikeId，對應帳戶記錄）
   const createBikeId = (value: string) =>
     `bike-${value.trim().toLowerCase().replace(/[^a-z0-9]/g, '') || Date.now().toString(36)}`;
+
+  // Web NFC 沒有獨立的「請求權限」按鈕——scan()/write() 第一次呼叫時瀏覽器會自動彈出
+  // 系統權限提示；此函式只在使用者已經拒絕過（下次不再彈窗）時，給出對應的修復步驟。
+  const nfcErrorMessage = (err: unknown, action: '寫入' | '讀取'): string => {
+    switch (classifyNfcError(err)) {
+      case 'not-supported':
+        return '此裝置不支援 Web NFC（僅 Android 版 Chrome 89+ 支援）。';
+      case 'permission-denied':
+        return `尚未取得 NFC ${action}權限（可能先前按過「拒絕」）。請點瀏覽器網址列左側鎖頭圖示 → 網站設定 → 找到「感應器 / NFC」→ 改為允許，並確認手機系統設定已開啟 NFC，然後重新整理頁面再試一次。`;
+      case 'aborted':
+        return '';
+      default:
+        return `${action}失敗，請將手機貼近標籤再試一次。`;
+    }
+  };
 
   const startNfcScan = () => {
     setScanning(true);
@@ -77,15 +92,17 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
     setWriting(true);
 
     try {
-      // 嘗試真實 NFC 寫入（需 Android Chrome 89+、HTTPS、使用者手勢）
+      // 嘗試真實 NFC 寫入（需 Android Chrome 89+、HTTPS、使用者手勢；
+      // 第一次呼叫瀏覽器會自動彈出「允許使用 NFC？」的系統權限提示）
       await writeBikeTag(tagPayload);
       setNfcMode('real');
       onNotify('NFC 標籤已完成實體寫入。', 'success');
     } catch (err) {
-      // 不支援或寫入失敗 → 退回原本的模擬流程
+      // 不支援、無權限或寫入失敗 → 退回模擬流程，但清楚告知原因（尤其是權限被拒的修復方法）
       await new Promise((resolve) => setTimeout(resolve, 1200));
       setNfcMode('sim');
-      onNotify('此裝置未完成真 NFC 寫入，已使用模擬流程保留展示效果。', 'warning');
+      const detail = nfcErrorMessage(err, '寫入');
+      onNotify(detail ? `${detail}（已改用模擬流程保留展示效果）` : '已改用模擬流程保留展示效果。', 'warning');
     }
 
     onAddBike(newBike);
@@ -100,15 +117,13 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
     const controller = new AbortController();
     verifyAbortRef.current = controller;
     try {
+      // 第一次呼叫會由瀏覽器自動彈出「允許使用 NFC？」的系統權限提示（需使用者手勢觸發，此按鈕點擊即滿足）
       const tag = await readBikeTag(controller.signal);
       setVerifiedTag(tag);
       onNotify('已讀取 NFC 標籤，車輛身分驗證成功。', 'success');
-    } catch (err: any) {
-      if (err?.message === 'NOT_SUPPORTED') {
-        onNotify('此裝置不支援 Web NFC（僅 Android 版 Chrome 89+）。', 'warning');
-      } else {
-        onNotify('讀取失敗，請將手機貼近標籤再試一次。', 'error');
-      }
+    } catch (err) {
+      const detail = nfcErrorMessage(err, '讀取');
+      if (detail) onNotify(detail, 'error');
     } finally {
       setVerifying(false);
     }
