@@ -66,18 +66,44 @@ export async function writeBikeTag(tag: BikeTagData): Promise<void> {
   });
 }
 
+/** BikeTagData 的四個欄位名稱，供正則篩選與逐一比對使用 */
+const BIKE_TAG_FIELDS: (keyof BikeTagData)[] = ['tagId', 'bikeId', 'frameNo', 'appUrl'];
+
+/**
+ * 從一段純文字裡，用寬鬆的正則比對「篩選」出目標欄位的值——即使內容不是
+ * 嚴格合法的 JSON（例如少了引號、標籤寫入工具動過格式、多了不可見字元），
+ * 只要文字裡看得出 `tagId: xxx`、`"frameNo"="xxx"` 這類「欄位名 + 分隔符 + 值」
+ * 的樣式，就能個別擷取出來，而不是把整段文字囫圇吞棗塞進單一欄位。
+ */
+function extractFieldsFromText(text: string): Partial<BikeTagData> {
+  const result: Partial<BikeTagData> = {};
+  for (const field of BIKE_TAG_FIELDS) {
+    // 比對 "tagId": "value"、tagId=value、tagId: value 等常見寫法（大小寫不拘）。
+    // 值不含空白字元，避免像 "tagId=X frameNo=Y" 這種空格分隔的寫法把下一個欄位也吞進來。
+    const re = new RegExp(`["']?${field}["']?\\s*[:=]\\s*["']?([^"',}\\s]+)["']?`, 'i');
+    const match = text.match(re);
+    if (match) {
+      const value = match[1].trim();
+      if (value) result[field] = value;
+    }
+  }
+  return result;
+}
+
 /**
  * 嘗試把單一 NDEF 記錄解析成 BikeTagData：不論它被寫入時宣告的
  * recordType/mediaType 是什麼（'mime'/'text'/'unknown' 等，取決於
  * 寫入工具的實作方式），只要能解碼出文字內容就接受——不強制要求
  * 內容一定是結構化 JSON。
  *
- * 讀取策略（由嚴謹到寬鬆）：
+ * 讀取策略（由嚴謹到寬鬆，逐層退回）：
  * 1. 先嘗試 JSON.parse，若成功且含 tagId/frameNo 欄位 → 直接回傳完整資料。
- * 2. JSON.parse 失敗（例如純文字標籤、NFC Tools 寫入格式跟預期不同）
- *    → 退回「純文字」模式：把整段解碼出來的文字當作標籤編號本身，
- *    tagId/frameNo 都填這段文字，bikeId/appUrl 留空，一樣視為有效讀取，
- *    不再因為格式不是 JSON 而直接判定讀取失敗。
+ * 2. JSON.parse 失敗 → 改用 extractFieldsFromText() 從文字中「篩選」出
+ *    tagId/bikeId/frameNo/appUrl 各自的值（就算格式不是嚴謹 JSON 也擷取得到），
+ *    只要篩出 tagId 或 frameNo 任一個，缺的欄位互相補上、其餘留空。
+ * 3. 連欄位樣式都比對不到（純粹一段沒有結構的文字，例如只寫了一個編號）
+ *    → 最後才把整段文字當作標籤編號本身，tagId/frameNo 都填這段文字。
+ * 每一層都算「有效讀取」，不會因為不是嚴格 JSON 就直接判定讀取失敗。
  */
 function tryParseBikeTag(record: any): BikeTagData | null {
   let text: string;
@@ -94,7 +120,14 @@ function tryParseBikeTag(record: any): BikeTagData | null {
       return parsed as BikeTagData;
     }
   } catch {
-    // 不是有效 JSON，繼續往下當純文字處理
+    // 不是有效 JSON，繼續往下用欄位篩選
+  }
+
+  const fields = extractFieldsFromText(text);
+  if (fields.tagId || fields.frameNo) {
+    const id = fields.tagId ?? fields.frameNo!;
+    const frame = fields.frameNo ?? fields.tagId!;
+    return { tagId: id, bikeId: fields.bikeId ?? '', frameNo: frame, appUrl: fields.appUrl ?? '' };
   }
 
   const trimmed = text.trim();
