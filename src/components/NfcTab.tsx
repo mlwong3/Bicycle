@@ -28,6 +28,8 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
   const [verifying, setVerifying] = useState(false);
   const [verifiedTag, setVerifiedTag] = useState<BikeTagData | null>(null);
   const verifyAbortRef = useRef<AbortController | null>(null);
+  // 登記流程「掃描標籤」用的中止控制器（逾時或重新掃描時取消上一次）
+  const registerScanAbortRef = useRef<AbortController | null>(null);
 
   const createDemoTagId = (value: string) =>
     `QJ-NFC-${value.trim().replace(/[^a-zA-Z0-9]/g, '').slice(-6) || Math.floor(100000 + Math.random() * 900000)}`;
@@ -51,22 +53,48 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
     }
   };
 
-  const startNfcScan = () => {
+  // 掃描標籤：真實讀取貼在單車上的 NFC 標籤，把 tagId/frameNo 自動填入下方表單
+  // （型號、車主姓名依私隱優先設計不會寫在標籤上，仍需手動輸入）。
+  // 不支援 Web NFC 的裝置（桌面 / iOS）才退回模擬填入，方便展示介面流程。
+  const startNfcScan = async () => {
     setScanning(true);
     setScanSuccess(false);
 
-    setTimeout(() => {
+    if (!isNfcSupported()) {
+      setTimeout(() => {
+        setScanning(false);
+        setScanSuccess(true);
+        setStep(2);
+        setModel('City Cruiser X1');
+        const frame = 'HK-CCX-' + Math.floor(10000 + Math.random() * 90000);
+        setFrameNo(frame);
+        setNfcTagId(createDemoTagId(frame));
+        setOwnerName('單車愛好者');
+        onNotify('此裝置不支援 Web NFC，已用模擬資料示範流程。', 'info');
+      }, 1200);
+      return;
+    }
+
+    registerScanAbortRef.current?.abort();
+    const controller = new AbortController();
+    registerScanAbortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000); // 10 秒偵測不到即逾時
+
+    try {
+      const tag = await readBikeTag(controller.signal);
+      window.clearTimeout(timeoutId);
       setScanning(false);
       setScanSuccess(true);
       setStep(2);
-      
-      // Auto fill mock data from physical tag!
-      setModel('City Cruiser X1');
-      const frame = 'HK-CCX-' + Math.floor(10000 + Math.random() * 90000);
-      setFrameNo(frame);
-      setNfcTagId(createDemoTagId(frame));
-      setOwnerName('單車愛好者');
-    }, 1800);
+      setFrameNo(tag.frameNo);
+      setNfcTagId(tag.tagId);
+      onNotify('已讀取標籤資料，請補上單車型號與車主姓名後送出。', 'success');
+    } catch (err) {
+      window.clearTimeout(timeoutId);
+      setScanning(false);
+      const detail = nfcErrorMessage(err, '讀取');
+      onNotify(detail || '未偵測到標籤資料，可能是全新空白標籤，請直接手動填寫下方欄位。', 'warning');
+    }
   };
 
   const handleQrScanMock = () => {
