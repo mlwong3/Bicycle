@@ -66,29 +66,60 @@ export async function writeBikeTag(tag: BikeTagData): Promise<void> {
   });
 }
 
+/**
+ * 嘗試把單一 NDEF 記錄解析成 BikeTagData：不論它被寫入時宣告的
+ * recordType/mediaType 是什麼（'mime'/'text'/'unknown' 等，取決於
+ * 寫入工具的實作方式），只要內容解碼後是符合形狀的 JSON 就接受。
+ * 這樣才能相容第三方 App（如 NFC Tools）寫入的標籤，不必要求它們
+ * 產生跟 writeBikeTag() 完全一致的底層記錄格式。
+ */
+function tryParseBikeTag(record: any): BikeTagData | null {
+  try {
+    const decoder = new TextDecoder(record.encoding || 'utf-8');
+    const text = decoder.decode(record.data);
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.tagId === 'string' && typeof parsed.frameNo === 'string') {
+      return parsed as BikeTagData;
+    }
+  } catch {
+    // 不是有效 JSON 或形狀不符，略過此記錄，繼續看標籤內的下一筆
+  }
+  return null;
+}
+
 /** 防盜驗證：感應車上的標籤，讀回識別資料（需在使用者點擊後呼叫） */
 export async function readBikeTag(signal?: AbortSignal): Promise<BikeTagData> {
   if (!isNfcSupported()) {
     throw new Error('NOT_SUPPORTED');
   }
   const ndef = new window.NDEFReader();
-  await ndef.scan({ signal });
   return new Promise<BikeTagData>((resolve, reject) => {
+    // 務必在呼叫 scan() 之前先掛上事件監聽：若呼叫時手機已貼著標籤，
+    // reading 事件可能在 scan() 的 promise resolve 之前就先觸發，
+    // 監聽器晚掛上就會直接錯過該次讀取（曾是舊版程式碼的 bug）。
     ndef.onreading = (event: any) => {
-      const dec = new TextDecoder();
-      for (const r of event.message.records) {
-        if (r.mediaType === 'application/json') {
-          try {
-            resolve(JSON.parse(dec.decode(r.data)));
-            return;
-          } catch {
-            reject(new Error('標籤資料解析失敗'));
-            return;
-          }
+      const records = event.message.records;
+      for (const r of records) {
+        const parsed = tryParseBikeTag(r);
+        if (parsed) {
+          resolve(parsed);
+          return;
         }
       }
-      reject(new Error('標籤無有效資料'));
+      console.warn(
+        '[NFC] 標籤內沒有符合格式的 JSON 記錄，實際記錄：',
+        records.map((r: any) => ({ recordType: r.recordType, mediaType: r.mediaType, encoding: r.encoding }))
+      );
+      reject(
+        new Error(
+          `標籤無有效資料：讀到 ${records.length} 筆記錄，但沒有一筆是符合格式的單車識別 JSON（需含 tagId 與 frameNo 欄位），請確認標籤內容`
+        )
+      );
     };
-    ndef.onreadingerror = () => reject(new Error('讀取失敗'));
+    ndef.onreadingerror = () => {
+      console.error('[NFC] onreadingerror：偵測到標籤但讀取/解析失敗');
+      reject(new Error('讀取失敗：偵測到標籤但無法解析內容，可能是移開太快、標籤資料不完整或已損壞'));
+    };
+    ndef.scan({ signal }).catch(reject);
   });
 }

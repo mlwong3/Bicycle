@@ -49,7 +49,9 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
       case 'aborted':
         return '';
       default:
-        return `${action}失敗，請將手機貼近標籤再試一次。`;
+        // 顯示 nfc.ts 拋出的實際錯誤內容（例如「找不到符合格式的 JSON 記錄」），
+        // 而不是一律用通用文字蓋掉，這樣才看得出確切失敗原因方便排查。
+        return err instanceof Error && err.message ? err.message : `${action}失敗，請將手機貼近標籤再試一次。`;
     }
   };
 
