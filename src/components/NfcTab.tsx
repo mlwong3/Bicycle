@@ -24,6 +24,9 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
   const [writing, setWriting] = useState(false);
   const [nfcMode, setNfcMode] = useState<'real' | 'sim'>('sim');
   const [nfcTagId, setNfcTagId] = useState('QJ-NFC-DEMO');
+  // 掃描標籤讀回的其餘欄位（唯讀顯示，讓使用者看到卡片實際內容，方便排查讀取問題）
+  const [scannedBikeId, setScannedBikeId] = useState('');
+  const [scannedAppUrl, setScannedAppUrl] = useState('');
   // 防盜驗證：感應標籤讀回的識別資料
   const [verifying, setVerifying] = useState(false);
   const [verifiedTag, setVerifiedTag] = useState<BikeTagData | null>(null);
@@ -70,7 +73,10 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
         setModel('City Cruiser X1');
         const frame = 'HK-CCX-' + Math.floor(10000 + Math.random() * 90000);
         setFrameNo(frame);
-        setNfcTagId(createDemoTagId(frame));
+        const demoTagId = createDemoTagId(frame);
+        setNfcTagId(demoTagId);
+        setScannedBikeId(createBikeId(frame));
+        setScannedAppUrl(APP_URL);
         setOwnerName('單車愛好者');
         onNotify('此裝置不支援 Web NFC，已用模擬資料示範流程。', 'info');
       }, 1200);
@@ -88,8 +94,11 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
       setScanning(false);
       setScanSuccess(true);
       setStep(2);
+      // 把讀到的每個欄位分別填入對應的 text box（下方「已讀取的標籤欄位」區塊）
       setFrameNo(tag.frameNo);
       setNfcTagId(tag.tagId);
+      setScannedBikeId(tag.bikeId);
+      setScannedAppUrl(tag.appUrl);
       onNotify('已讀取標籤資料，請補上單車型號與車主姓名後送出。', 'success');
     } catch (err) {
       window.clearTimeout(timeoutId);
@@ -284,6 +293,30 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
             </button>
           </div>
         </div>
+
+        {/* 已讀取的標籤欄位：掃描成功後，把卡片內容的每個欄位分別顯示在唯讀 text box，
+            方便核對卡片實際內容（尤其排查讀取問題時，能看到到底讀到了什麼）。 */}
+        {scanSuccess && (
+          <div className="grid grid-cols-1 gap-2 bg-white border border-zinc-200 rounded-xl p-3">
+            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-0.5">已讀取的標籤欄位（唯讀）</p>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-zinc-400">tagId・標籤編號</label>
+              <input type="text" readOnly value={nfcTagId} className="w-full px-2.5 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-[11px] font-mono text-zinc-600" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-zinc-400">bikeId・單車識別碼</label>
+              <input type="text" readOnly value={scannedBikeId || '（純文字標籤，無此欄位）'} className="w-full px-2.5 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-[11px] font-mono text-zinc-600" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-zinc-400">frameNo・車架編號</label>
+              <input type="text" readOnly value={frameNo} className="w-full px-2.5 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-[11px] font-mono text-zinc-600" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-zinc-400">appUrl・App 網址</label>
+              <input type="text" readOnly value={scannedAppUrl || '（純文字標籤，無此欄位）'} className="w-full px-2.5 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-[11px] font-mono text-zinc-600 truncate" />
+            </div>
+          </div>
+        )}
 
         {/* Owner Name */}
         <div className="flex flex-col gap-1.5">
