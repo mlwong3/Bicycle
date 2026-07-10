@@ -123,8 +123,12 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
     }
 
     const tagId = nfcTagId || createDemoTagId(frameNo);
+    // 保留原本卡片內容：若剛才有掃描到現有標籤，沿用其 bikeId / appUrl，
+    // 不要重新產生覆蓋掉；只有全新（未掃描過）標籤才會生成新的 bikeId。
+    const bikeId = scannedBikeId || createBikeId(frameNo);
+    const appUrl = scannedAppUrl || APP_URL;
     // 寫入標籤的私隱優先資料（只含編號與網址，不含姓名 / 型號）
-    const tagPayload: BikeTagData = { tagId, bikeId: createBikeId(frameNo), frameNo, appUrl: APP_URL };
+    const tagPayload: BikeTagData = { tagId, bikeId, frameNo, appUrl };
     // 存入帳戶 / 雲端的完整記錄（型號、車主留在帳戶，不寫入實體標籤）
     const newBike = { model, frameNo, ownerName, nfcTagId: tagId };
     setStep(3);
@@ -170,6 +174,14 @@ export default function NfcTab({ onAddBike, onSwitchToTab, onNotify }: NfcTabPro
 
   const handleCompleteFlow = () => {
     setIsSubmitSuccess(false);
+    // 重設掃描狀態，避免這張標籤的 bikeId/appUrl 殘留到下一次全新登記
+    setStep(1);
+    setModel('');
+    setFrameNo('');
+    setOwnerName('');
+    setScanSuccess(false);
+    setScannedBikeId('');
+    setScannedAppUrl('');
     onSwitchToTab('personal'); // Directly forward user to Personal center to see updated bike lists
   };
 
