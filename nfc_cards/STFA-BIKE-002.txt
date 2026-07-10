@@ -1,0 +1,1 @@
+{"tagId":"STFA-BIKE-002","bikeId":"bike-d4e5f6","frameNo":"HK-GT23-0392","appUrl":"https://bicycle-ee76c.web.app"}

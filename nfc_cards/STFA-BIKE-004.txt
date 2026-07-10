@@ -1,0 +1,1 @@
+{"tagId":"STFA-BIKE-004","bikeId":"bike-j1k2l3","frameNo":"HK-SP24-0026","appUrl":"https://bicycle-ee76c.web.app"}

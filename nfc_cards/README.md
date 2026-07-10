@@ -1,9 +1,14 @@
 # NFC 卡片登記表
 
-10 張示範 NFC 卡片的資料檔（`STFA-BIKE-001.json` ～ `STFA-BIKE-010.json`），用於寫入實體 NFC 標籤。
+10 張示範 NFC 卡片的資料檔，每張有兩種格式：
+- `STFA-BIKE-001.json` ～ `010.json`：排版好的 JSON（方便閱讀 / 核對欄位）
+- `STFA-BIKE-001.txt` ～ `010.txt`：**壓縮成單行**的相同內容，用 NFC Tools 寫卡時直接整段複製貼上（選
+  **Text（純文字）** 記錄類型即可，不需要糾結「JSON」選項是否符合格式）
+
 所有卡片只儲存識別編號與 App 網址，**不含姓名、電話等個人資料**（私隱優先設計）。
-格式與 [`src/nfc.ts`](../src/nfc.ts) 的 `BikeTagData` 完全一致（`tagId`/`bikeId`/`frameNo`/`appUrl`），
-App「感應標籤・驗證單車身分」功能可直接讀取這些卡片。
+格式與 [`src/nfc.ts`](../src/nfc.ts) 的 `BikeTagData` 完全一致（`tagId`/`bikeId`/`frameNo`/`appUrl`）。
+App 端 `tryParseBikeTag()` 不管標籤記錄被寫成 `text` 還是 `mime` 類型，只要解碼後是符合格式（含
+`tagId`、`frameNo`）的 JSON 字串就能讀取，「感應標籤・驗證單車身分」功能可直接讀取這些卡片。
 
 | tagId | bikeId | frameNo | 寫入日期 | 測試狀態 | 貼在哪 | 備註 |
 |---|---|---|---|---|---|---|
@@ -21,11 +26,10 @@ App「感應標籤・驗證單車身分」功能可直接讀取這些卡片。
 ## 如何寫入 NFC 標籤（用手機）
 
 1. Android 手機安裝 **NFC Tools** App（免費）。
-2. 開 App → Write（寫入）→ Add a record（新增記錄）→ 選 **Data（資料）** 類型的
-   **JSON** 或 **Text/Custom (MIME)**，MIME 類型填 `application/json`。
-3. 把對應 `.json` 檔的內容整段貼進去。
+2. 開 App → Write（寫入）→ Add a record（新增記錄）→ 選 **Text（純文字）**。
+3. 把對應 `.txt` 檔的內容（單行、無多餘空格）整段貼進去。
 4. 按「Write / OK」，把手機背面靠近空白 NFC 標籤，聽到提示即寫入成功。
-5. 用 App 的 Read（讀取）功能靠近同一張標籤，確認讀回的內容正確。
+5. 用「騎跡」App 的「感應標籤・驗證單車身分」靠近同一張標籤，確認讀回的內容正確。
 6. 回來這張表更新「測試狀態」。
 
 > 建議 NFC 標籤買 **NTAG213 / NTAG215**（13.56MHz、支援 NDEF），先買 10-20 張備用。
