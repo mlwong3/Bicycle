@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  appendStatusHistory,
+  getAllowedNextStatuses,
+  getPatrolEligibleReports,
+} from '../src/admin';
+
+test('pending only advances to reviewing or dismissed', () => {
+  assert.deepEqual(getAllowedNextStatuses('pending'), ['reviewing', 'dismissed']);
+});
+
+test('status update appends history without removing existing entries', () => {
+  const report = {
+    id: 'r1',
+    location: '沙田',
+    description: '阻路',
+    status: 'pending' as const,
+    date: '2026-07-13',
+    statusHistory: [{ status: 'pending' as const, at: '2026-07-13T09:00:00.000Z', by: 'citizen' }],
+  };
+
+  const updated = appendStatusHistory(report, 'reviewing', 'admin-demo', '已接收', '2026-07-13T10:00:00.000Z');
+
+  assert.equal(updated.status, 'reviewing');
+  assert.equal(updated.statusHistory?.length, 2);
+  assert.equal(updated.statusHistory?.[0].status, 'pending');
+});
+
+test('patrol candidates require coordinates and an actionable status', () => {
+  const reports = [
+    { id: 'a', status: 'noticed' as const, lat: 22.38, lng: 114.18 },
+    { id: 'b', status: 'scheduled' as const },
+    { id: 'c', status: 'resolved' as const, lat: 22.39, lng: 114.19 },
+  ];
+
+  assert.deepEqual(getPatrolEligibleReports(reports).map((report) => report.id), ['a']);
+});
+
+test('legacy reports without history stay valid but cannot become patrol candidates', () => {
+  const legacy = {
+    id: 'legacy',
+    location: '大埔',
+    description: '單車',
+    status: 'pending' as const,
+    date: '2026-06-19',
+  };
+
+  assert.deepEqual(getPatrolEligibleReports([legacy]), []);
+});
