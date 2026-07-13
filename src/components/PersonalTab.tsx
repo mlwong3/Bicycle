@@ -59,7 +59,7 @@ export default function PersonalTab({
     { name: '科學園海濱單車徑', length: '3.0 km', area: '白石角' },
   ];
 
-  const processingReportsCount = reports.filter(r => ['pending', 'reviewing', 'noticed', 'scheduled'].includes(r.status)).length;
+  const processingReportsCount = reports.filter(r => !['resolved', 'dismissed', 'duplicate'].includes(r.status)).length;
   const resolvedReportsCount = reports.filter(r => r.status === 'resolved').length;
 
   // 減碳 = 累計騎乘距離 × 官方排放係數（取代原本捏造公式）

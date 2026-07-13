@@ -1,26 +1,26 @@
-# 管理員系統規劃 — 政府人員違規單車處理 + AI 分析
+# 騎跡跨部門單車舉報、巡查及個案管理原型
 
 > 規劃文件・專案：mlwong3/Bicycle（騎跡 Bike Trace）・建立日期：2026-07-13
-> 目標：加入「管理員系統」，模擬政府人員收到市民舉報相片後，如何審核、分析及清理違規停泊單車。
-> 三大決策（已確認）：AI 先作一次獨立試運行再決定是否納入方案、管理員採「示範密碼登入」、路線採「多點清理巡邏路線」。
+> 目標：在現有市民舉報功能上，建立跨部門案件分類、人工觀察、程序確認、巡查次序及市民端狀態同步的示範原型。
+> 新方案（已確認）：本期移除 AI 相片分析；AI 只處理舉報文字及結構化欄位，人工 rubric 作為相片狀況主要依據。
 
 ---
 
 ## 一、目標與定位
 
-- **模擬對象**：香港現實中違泊單車由運輸署、食環署、地政總署等跨部門處理，流程為「巡查發現／接獲舉報 → 貼上勸諭告示 → 限期（一般約兩星期）後仍未移走 → 充公清理」。本系統以此流程為藍本做簡化模擬。
-- **角色分工**：市民端（現有 ReportTab）負責影相舉報；管理員端（新增 AdminTab）負責接收、覆核、排程清理、結案；AI 僅作獨立試運行。
-- **展示重點**：讓評審看到完整閉環——市民舉報 → 管理員收到 → 人員覆核及疑似棄置風險評估 → 產生示範巡邏路線 → 結案後市民端狀態同步更新。
-- **誠實原則**（沿用專案風格）：AI 估算屬推測性質，介面必須標示信心度與「僅供參考，最終由人員判斷」；模擬模式須明確標示「示範資料」。
+- **系統定位**：本系統是跨部門案件管理原型，不宣稱正式政府執法、法定通知或正式派工系統。
+- **角色分工**：市民端負責拍照、定位、描述及提交；管理員負責分類、人工觀察、程序確認、巡查次序及結案；AI 只提供文字分類建議。
+- **展示重點**：市民舉報 → AI 整理文字／欄位 → 人工 rubric → 程序確認 → 巡查次序建議 → 管理員確認 → 市民端顯示已完成處理。
+- **誠實原則**：所有 AI、期限及路線均標示為建議或示範估算；示範資料固定標示 `Prototype Simulation`。
 
 ## 二、現況與可重用模組
 
 | 現有模組 | 重用方式 |
 |---|---|
 | `types.ts` 的 `Report`（imageUrl/location/description/status/date） | 擴充欄位（見第五節），不破壞現有市民端 |
-| `backend.ts` 的 `syncReport()` + Firestore `reports` collection | 管理員端直接讀同一 collection，加狀態寫回 |
+| `backend.ts` 的同步及讀取 adapter | 保留現有 `reports` 相容性，轉換為公開 `PublicReport` 及內部 `AdminReport` |
 | `mapbox.ts`（Directions + 反向地理編碼） | 巡邏路線逐段導航繪製 |
-| `trackRouting.ts`（官方單車徑 Dijkstra） | 相鄰兩個清理點之間可沿單車徑規劃（優先）|
+| `trackRouting.ts`（官方單車徑 Dijkstra） | 只作單車流動或地圖參考；清理車輛不可沿單車徑導航 |
 | `geolocation.ts` | 管理員出發點定位 |
 | `predict.ts` 的可解釋模型風格 | AI fallback 沿用「可解釋規則 + 標示方法」的做法 |
 | MapTab 的 Leaflet 地圖 | 巡邏路線視覺化直接疊加 |
@@ -36,33 +36,31 @@
 
 ### 3.2 案件工作台（Dashboard）
 
-- **案件列表**：讀取 `reports`，按狀態分欄（待審核 / 已分析 / 已排程 / 已結案 / 不成立），顯示相片縮圖、地點、舉報時間、AI 破舊評分徽章。
-- **案件詳情**：大圖 + 地圖定位 + 舉報描述 + AI 分析結果卡 + 狀態操作按鈕。
-- **統計卡**：本週新增舉報、待處理數、平均處理時間、已清理數量（配合比賽展示數據故事）。
+- **案件列表**：按狀態、分類、緊急程度及部門篩選，顯示相片縮圖、地點及舉報時間。
+- **案件詳情**：大圖 + 地圖定位 + 舉報描述 + AI 文字分類建議 + 人工六項 rubric + 程序設定 + 狀態時間線。
+- **統計卡**：本週新增舉報、待處理數、平均處理時間、已完成處理數量（配合比賽展示數據故事）。
 
 ### 3.3 案件狀態機
 
-```
-pending（市民已舉報）
-  → reviewing（管理員已接收，等待人員覆核）
-  → noticed（已貼勸諭告示，記錄 noticeDate，模擬 14 日限期倒數）
-  → scheduled（已納入清理路線）
-  → resolved（已清理結案）
-  → dismissed（不成立／重複舉報）
+```text
+pending → reviewing → classified → field_review_required
+         → notice_issued → deadline_expired → clearance_approved
+         → scheduled → in_progress → resolved
 ```
 
-- 現有 `Report.status` 只有 `pending | resolved`，擴充為上述枚舉；市民端顯示映射（noticed/scheduled 統一顯示「處理中」），避免改動市民端 UI 太多。
-- 每次狀態變更寫入 `statusHistory[]`（時間、操作者、備註），詳情頁顯示時間線。
+`reviewing`、`classified` 及現場覆核階段可分支至 `needs_information`、`duplicate` 或 `dismissed`。`clearance_approved` 是加入巡查建議的必要閘門；不得直接由未確認案件跳至 `scheduled`。
 
-## 四、AI 分析設計（獨立試運行，尚未納入真實處理流程）
+市民端只顯示「待審核／處理中／已完成處理／不成立」，管理員端顯示完整內部狀態。每次變更均寫入不可任意刪除的事件記錄，包括時間、操作者、原因及備註。
+
+## 四、AI 文字／欄位分類設計
 
 ### 4.1 目的
 
-由相片辨認可見的破舊、附著物與零件缺失等訊號，輸出「疑似棄置風險評估」，協助人員決定是否優先現場覆核。此評估**不推斷停泊時長，亦不可單獨作出清理或充公決定**。
+AI 只根據案件描述、選取標籤、地點名稱、座標狀態及人工 rubric 摘要，建議案件分類、緊急程度、負責部門、缺少資料、優先度級別、理由及信心度。AI 不接收相片，不判斷單車是否棄置，不宣告違法，不批准清理及不結案。
 
-### 4.2 破舊程度視覺指標（rubric）
+### 4.2 人工六項相片 rubric
 
-AI 與 fallback 共用同一套可解釋指標，每項 0–3 分：
+管理員逐項觀察鏽蝕、輪胎、積塵、附著物、零件缺失及車鎖狀態，每項 0–3 分；相片看不到時使用 `null`，不得當作 0 分。分數只代表相片可見狀況訊號，不等同棄置概率或停泊時長。
 
 | 指標 | 觀察點 | 與風險的關係 |
 |---|---|---|
@@ -73,72 +71,51 @@ AI 與 fallback 共用同一套可解釋指標，每項 0–3 分：
 | 零件缺失 missing | 車座、車輪、鏈條被拆走 | 可能反映損毀或失竊，須人員覆核 |
 | 車鎖狀態 lock | 鎖生鏽、鎖已被剪斷仍無人取車 | 可提高風險，但不可據此認定棄置 |
 
-### 4.3 疑似棄置風險評估
+### 4.3 AI fallback 及安全界線
 
-總分（加權和，0–100）映射為四級，只反映相片中的視覺風險訊號：
+無後端代理、無網絡或回覆格式錯誤時，顯示「AI 暫時不可用」，保留案件原資料，由管理員手動分類；巡查模組改用規則式欄位。AI 結果只保存為建議，管理員可接受、修改或拒絕。
 
-| 風險評分 | 風險級別 | 建議行動 |
-|---|---|---|
-| 0–24 | 低 | 按一般程序處理；如有阻塞或安全問題再巡查 |
-| 25–49 | 中 | 建議安排現場覆核及記錄 |
-| 50–74 | 高 | 優先覆核；確認後才按程序貼告示或排程 |
-| 75–100 | 很高 | 優先安排人員現場判斷，不能直接清理或充公 |
+本期不把 AI API 金鑰放入前端 `VITE_` 環境變數，也不新增前端直接呼叫外部 AI。後續如接入供應商，必須經 Cloud Functions 或同等後端代理及 schema 驗證。
 
-每級附 `confidence`（high/medium/low）：例如相片模糊、只影到局部，信心度降級並提示管理員補充現場照。
-
-### 4.4 真 AI 獨立試運行（Gemini Vision）
-
-- 不接入前端、不寫入 Firestore；只以一張獲授權測試相片執行一次並記錄結果，確認可靠性後才決定是否開發 `src/ai.ts`。
-- Prompt 要求以 **structured JSON output**（responseSchema）回傳：
-
-```json
-{
-  "isBicycle": true,
-  "indicators": { "rust": 2, "tire": 3, "dust": 2, "attachment": 1, "missing": 0, "lock": 1 },
-  "riskScore": 62,
-  "riskLevel": "high",
-  "confidence": "medium",
-  "reasons": ["鏈條與輪圈明顯鏽蝕", "前胎完全扁塌", "車座有塵埃層"],
-  "suggestedAction": "優先納入清理路線"
-}
-```
-
-- `isBicycle=false`（相片不是單車）→ 提示管理員標記為「不成立」，順便展示 AI 能過濾無效舉報。
-- 試運行結果只作可行性驗證；如日後採用，正式系統必須經後端（Cloud Functions）代理呼叫，並由人員覆核。
-
-### 4.5 模擬 fallback（無金鑰／離線／API 失敗）
-
-- 沿用 4.2 rubric，但改為**管理員勾選檢查表**：詳情頁列出六項指標各 0–3 分的按鈕組，人員目測相片評分，程式即時計算 riskScore 與風險級別——與 AI 試運行輸出同一格式。
-- 好處：零成本、可解釋、展示時就算網絡故障也能完整走流程；且「人員輔助評分」本身就是合理的 human-in-the-loop 設計，不是造假。
-- 介面徽章區分來源：`AI 分析（Gemini）` vs `人員評分（規則模型）`。
-
-### 4.6 升級路徑（文件記錄，非本期實作）
+### 4.4 升級路徑（文件記錄，非本期實作）
 
 - 自訓模型：收集標註相片，以 Teachable Machine / TensorFlow.js MobileNet 遷移學習做瀏覽器端分類，比賽可講述「數據收集 → 訓練 → 部署」故事。
-- 同地點重複舉報交叉驗證：同一位置多次舉報同一單車（相片相似度／NFC tagId）可作為現場覆核參考；首次舉報日期最多只反映系統已知的下限，不能等同真實停泊時長。
+- 同地點重複舉報交叉驗證：同一位置多次舉報可作為現場覆核參考；首次舉報日期不能等同真實停泊時長。
 
 ## 五、資料模型變更（Firestore）
 
 ```ts
-// types.ts 擴充
-export interface Report {
+type PublicReport = {
   id: string;
-  imageUrl?: string;
-  location: string;
-  lat?: number; lng?: number;          // 新增：舉報座標（ReportTab GPS 已有來源）
+  reporterUid?: string;
+  publicStatus: 'pending' | 'processing' | 'resolved' | 'dismissed';
+  publicMessage?: string;
+  locationLabel: string;
+  imagePreviewPath?: string;
+};
+
+type AdminReport = {
+  id: string;
   description: string;
-  status: 'pending' | 'reviewing' | 'noticed' | 'scheduled' | 'resolved' | 'dismissed';
-  date: string;
-  aiAnalysis?: AiAnalysis;             // 新增：4.4 的 JSON + source: 'gemini' | 'manual-rubric'
-  noticeDate?: string;                 // 新增：貼告示日期（14 日倒數）
-  statusHistory?: { status: string; at: string; by: string; note?: string }[];
-  handledBy?: string;                  // 管理員 uid
-}
+  exactLocation?: { lat: number; lng: number };
+  locationSource: 'gps' | 'manual' | 'unknown';
+  status: ReportStatus;
+  caseType: CaseType;
+  urgency: Urgency;
+  aiClassification?: AiCaseClassification;
+  manualRubric?: ManualRubricRecord;
+  procedureConfigSnapshot?: ProcedureConfig;
+  deadlineAt?: string;
+  procedureConfirmed: boolean;
+  coordinatesValid: boolean;
+  isDuplicate: boolean;
+  patrolRouteId?: string;
+};
 ```
 
-- 新 collection：`admins/{uid}`（登入記錄）、`patrolRoutes/{id}`（已生成的巡邏路線：案件 id 順序、總距離、生成時間、完成狀態）。
-- `firestore.rules`：`reports` 市民只能建立及讀自己的；處理欄位（status/aiAnalysis/noticeDate…）僅 admins 可寫。示範階段規則可從寬，文件註明正式收緊方案。
-- 相片儲存：現時 `imageUrl` 為 base64/本地 URL；若要跨裝置展示（市民手機舉報 → 管理員電腦收到），需啟用 Firebase Storage 上傳，得出下載 URL。此為本計劃前置工作。
+- 正式架構建議分層為 `publicReports/{id}`、`adminReports/{id}`、`adminReports/{id}/events/{eventId}` 及 `patrolRoutes/{id}`；本期先由 `caseAdapter.ts` 保持現有 `reports` collection 相容。
+- 真正管理員 claim、Firestore／Storage Rules 收緊及後端 AI 代理不在本期實作。
+- 相片優先使用 Firebase Storage；上傳失敗時不得顯示虛假的成功提交。
 
 ## 六、AI 巡邏路線規劃
 
@@ -148,11 +125,11 @@ export interface Report {
 
 ### 6.2 演算法（自建、可解釋，沿用 trackRouting.ts 風格）
 
-1. **優先級評分**：`priority = 0.5×riskScore + 0.3×案件等待日數(封頂30) + 0.2×同區聚集度`。沒有 AI 結果時只採用等待日數與聚集度；案件多於單日容量時，取前 N 宗作示範。
+1. **優先級評分**：`35%×安全／阻塞 + 25%×等待時間 + 20%×人工 rubric + 10%×同區聚集 + 10%×資料完整度／AI 信心`。AI 不可用時改用資料完整度；案件多於單日容量時，取 5–8 宗作示範。
 2. **距離矩陣**:直線（Haversine）距離近似，避免 N² 次 API 呼叫。
 3. **TSP 近似解**：最近鄰居法（nearest neighbor）建初始路線 → 2-opt 迭代改善（N≤15 毫秒級完成）。
-4. **真實路線繪製**：確定訪問順序後，相鄰兩點間先試 `trackRouting`（沿官方單車徑）、退 Mapbox Directions、再退直線——完全重用現有三級 fallback，路線來源徽章照舊。
-5. **輸出**：地圖疊加編號標記（①②③…）+ 路線線段 + 側欄清單（每站案件摘要、風險評估〔如有〕、預計到達時間）。實際車速、停留時間、道路限制及派工規則須由人員確認。
+4. **路線模式**：步行巡查可使用步行路線；一般駕駛及清理車輛使用道路路線，不使用官方單車徑作車輛導航；沒有地圖 API 時退回直線估算並標示限制。
+5. **輸出**：案件順序、每站摘要、優先度、估算距離、估算時間範圍、路線來源及管理員確認按鈕。估算不包括現場處理、泊車、搬運及跨部門協調。
 
 ### 6.3 展示話術
 
@@ -166,30 +143,30 @@ export interface Report {
 - [x] 管理員登入（示範密碼 + sessionStorage + best-effort `admins` 記錄）
 - [x] AdminTab：案件列表、詳情、狀態流轉、statusHistory 時間線
 
-### Phase 2 — AI 分析
-- [ ] 獨立 AI 試運行：完成一次授權相片測試後，才決定是否開發 `src/ai.ts`
-- [ ] 人員評分 fallback（rubric 檢查表 UI + 同格式輸出）
-- [ ] 詳情頁風險評估卡（指標、風險級別、信心度、來源徽章、誠實註腳）
-- [ ] `isBicycle` 無效舉報過濾流程
+### Phase 2 — 跨部門案件管理 MVP
+- [x] AI 文字／欄位分類 deterministic fallback，明確不接收相片
+- [x] 人員六項 rubric 檢查表及不可觀察選項
+- [x] 可配置程序、案件快照及期限計算
+- [x] 公開／管理員 adapter、案件分類及狀態事件
 
-### Phase 3 — 巡邏路線
-- [ ] `src/patrol.ts`：優先級評分 + NN + 2-opt
-- [ ] 路線地圖視覺化（重用 MapTab 地圖或 AdminTab 內嵌地圖）+ 逐站清單 + 完成清理操作
-- [ ] `patrolRoutes` 持久化 + 距離節省 % 對比
+### Phase 3 — 巡查建議
+- [x] `src/patrol.ts`：優先級評分 + NN + 2-opt
+- [x] AdminTab 逐站清單、距離／時間估算、任務模式及管理員確認
+- [ ] `patrolRoutes` 正式持久化及真實道路路線整合
 
 ### Phase 4 — 打磨與展示
 - [ ] 統計儀表板（處理量、平均時長、清理熱點）
-- [x] 市民端狀態同步顯示（舉報紀錄見到「待審核／處理中／已清理／不成立」）
+- [x] 市民端狀態同步顯示（舉報紀錄見到「待審核／處理中／已完成處理／不成立」）
 - [ ] `firestore.rules` 收緊 + 示範資料標示檢查
-- [ ] 完整 demo 腳本：手機舉報 → 電腦管理員收到 → AI 分析 → 生成路線 → 結案 → 手機見到已清理
+- [ ] 完整 demo 腳本：手機舉報 → 電腦管理員收到 → AI 文字分類建議 → 人工確認 → 生成路線 → 結案 → 手機見到已完成處理
 
 ## 八、風險與注意事項
 
 | 風險 | 對策 |
 |---|---|
-| Gemini 金鑰暴露於前端 | 示範用免費金鑰 + 用量上限；文件註明正式方案走 Cloud Functions |
-| AI 誤判（如新車被評為高風險） | 僅輸出風險訊號，不推斷停泊時長；人員現場覆核後才可採取任何行動 |
+| AI 分類錯誤或資料不足 | AI 只作文字／欄位建議，顯示信心度及缺少資料，管理員可修正 |
+| AI Secret 暴露於前端 | 本期不接外部 AI；日後必須使用 Cloud Functions 或同等後端代理 |
 | 相片含路人／車牌等私隱 | 舉報頁提示避免拍攝途人；規劃註明正式系統應自動模糊人臉（列入升級路徑） |
-| 現場展示無網絡／API 故障 | fallback rubric 全流程可離線走完；預先入好 5–8 宗示範案件（標明示範資料） |
+| 現場展示無網絡／API 故障 | 規則式分類、人工 rubric 及直線路線 fallback 可完成示範；預先入好 5–8 宗模擬案件 |
 | 展示資料狀態混亂 | AdminTab 加「重設示範案件」按鈕，一鍵回復展示初始狀態 |
-| 與現實流程差異被評審質疑 | 介面用「勸諭告示」「限期移走」等真實術語，主動說明是簡化模擬並引述跨部門實際做法 |
+| 與現實流程差異被評審質疑 | 使用「原型／模擬資料／示範設定」說明，不把期限、部門及路線結果宣稱為正式程序 |

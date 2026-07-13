@@ -16,6 +16,8 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
   const [desc, setDesc] = useState('');
   const [locationStr, setLocationStr] = useState('');
   const [locationCoords, setLocationCoords] = useState<LatLng | null>(null);
+  const [locationSource, setLocationSource] = useState<'gps' | 'manual' | 'unknown'>('manual');
+  const [citizenTags, setCitizenTags] = useState<string[]>([]);
   const [isLocating, setIsLocating] = useState(false);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
@@ -38,6 +40,7 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
     try {
       const pos = await getCurrentPosition();
       setLocationCoords(pos);
+      setLocationSource('gps');
       const address = await reverseGeocode(pos);
       // 有地址用地址，否則退回經緯度
       setLocationStr(address || `緯度 ${pos.lat.toFixed(5)}, 經度 ${pos.lng.toFixed(5)}`);
@@ -94,6 +97,8 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
       onAddReport({
         location: locationStr,
         description: desc,
+        citizenTags,
+        locationSource,
         imageUrl: imgUrl || undefined,
         ...(locationCoords ? { lat: locationCoords.lat, lng: locationCoords.lng } : {}),
       });
@@ -103,6 +108,8 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
       setDesc('');
       setImgUrl(null);
       setLocationCoords(null);
+      setCitizenTags([]);
+      setLocationSource('manual');
       onNotify('舉報已提交，並已加入待核紀錄。', 'success');
     }, 1200);
   };
@@ -168,6 +175,7 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
                 onChange={(e) => {
                   setLocationStr(e.target.value);
                   setLocationCoords(null);
+                  setLocationSource('manual');
                 }}
                 placeholder="請手動輸入位置，或按右側「GPS 定位」"
                 className="w-full bg-zinc-50 border border-zinc-200/80 rounded-xl py-3 pl-11 pr-24 text-xs font-medium text-zinc-800 placeholder:text-zinc-400 outline-none focus:ring-2 focus:ring-[#006b2c] focus:border-transparent transition-all"
@@ -181,6 +189,30 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
               >
                 {isLocating ? '定位中…' : 'GPS 定位'}
               </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-500 block uppercase tracking-wider">案件類別（可選）</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ['obstruction', '阻塞通道'],
+                ['suspected_abandoned', '疑似棄置'],
+                ['damaged_bicycle', '單車破損'],
+                ['safety_hazard', '安全問題'],
+              ].map(([value, label]) => {
+                const selected = citizenTags.includes(value);
+                return (
+                  <button
+                    type="button"
+                    key={value}
+                    onClick={() => setCitizenTags((current) => selected ? current.filter((tag) => tag !== value) : [...current, value])}
+                    className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${selected ? 'bg-[#006b2c] text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
