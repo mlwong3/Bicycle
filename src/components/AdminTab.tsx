@@ -140,7 +140,7 @@ export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute,
         {[
           ['全部案件', reports.length, 'text-zinc-900'],
           ['待處理', reports.filter((report) => !['resolved', 'dismissed', 'duplicate'].includes(report.status)).length, 'text-amber-700'],
-          ['已清理', reports.filter((report) => report.status === 'resolved').length, 'text-emerald-700'],
+          ['已完成處理', reports.filter((report) => report.status === 'resolved').length, 'text-emerald-700'],
           ['不成立', reports.filter((report) => report.status === 'dismissed').length, 'text-zinc-600'],
         ].map(([label, count, color]) => (
           <div key={String(label)} className="bg-white border border-zinc-200 rounded-2xl p-3">
