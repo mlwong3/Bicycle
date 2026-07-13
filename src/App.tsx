@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bike, Report } from './types';
-import type { ReportStatus } from './admin';
+import { AdminReport, Bike, Report, PatrolRouteDraft } from './types';
 import { INITIAL_BIKES, INITIAL_REPORTS } from './data';
 
 import Onboarding from './components/Onboarding';
@@ -16,7 +15,8 @@ import AdminTab from './components/AdminTab';
 import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
 import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
 import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStatus, syncTrip, uploadReportImage } from './backend';
-import { appendStatusHistory } from './admin';
+import { applyAdminPatch, applyPatrolConfirmation, toAdminReport } from './caseAdapter';
+import { getStatusLabel } from './reportStatus';
 import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
@@ -163,18 +163,23 @@ export default function App() {
     void syncTrip(capped);
   };
 
-  const handleUpdateReport = (reportId: string, nextStatus: ReportStatus, note: string) => {
+  const handlePatchAdminReport = (reportId: string, patch: Partial<AdminReport>, note = '') => {
     const currentReport = reports.find((report) => report.id === reportId);
     if (!currentReport) return;
 
-    const updatedAt = new Date();
-    const updatedReport = {
-      ...appendStatusHistory<Report>(currentReport, nextStatus, 'admin-demo', note, updatedAt.toISOString()),
-      ...(nextStatus === 'notice_issued' && !currentReport.noticeDate ? { noticeDate: updatedAt.toISOString().split('T')[0] } : {}),
-    };
+    const updatedReport = applyAdminPatch(toAdminReport(currentReport), patch, 'admin-demo', note);
     setReports((prev) => prev.map((report) => report.id === reportId ? updatedReport : report));
     void syncReportStatus(updatedReport);
-    showNotice(`案件已更新為「${nextStatus === 'resolved' ? '已清理' : '處理中'}」。`, 'success');
+    if (patch.status) showNotice(`案件已更新為「${getStatusLabel(patch.status)}」。`, 'success');
+  };
+
+  const handleConfirmPatrolRoute = (route: PatrolRouteDraft) => {
+    const at = new Date().toISOString();
+    const currentAdminReports = reports.map(toAdminReport);
+    const updatedAdminReports = applyPatrolConfirmation(currentAdminReports, route, 'admin-demo', at, `demo-route-${Date.now()}`);
+    setReports((prev) => prev.map((report) => updatedAdminReports.find((item) => item.id === report.id) || report));
+    updatedAdminReports.filter((report) => route.reportIds.includes(report.id)).forEach((report) => { void syncReportStatus(report); });
+    showNotice('巡查次序已確認，案件已進入示範排程。', 'success');
   };
 
   const handleResetDemoReports = () => {
@@ -206,6 +211,8 @@ export default function App() {
   const handleSelectTab = (tab: string) => {
     setCurrentTab(tab);
   };
+
+  const adminReports = reports.map(toAdminReport);
 
   // If onboarding hasn't completed, show walk-through sliders
   if (!hasCompletedOnboarding) {
@@ -364,8 +371,9 @@ export default function App() {
               )}
               {currentTab === 'admin' && (
                 <AdminTab
-                  reports={reports}
-                  onUpdateReport={handleUpdateReport}
+                  reports={adminReports}
+                  onPatchReport={handlePatchAdminReport}
+                  onConfirmPatrolRoute={handleConfirmPatrolRoute}
                   onResetDemoReports={handleResetDemoReports}
                   onNotify={showNotice}
                 />

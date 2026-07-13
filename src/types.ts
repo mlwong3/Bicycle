@@ -191,6 +191,8 @@ export interface Report {
   patrolRouteId?: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AdminReport extends Report {
@@ -210,6 +212,7 @@ export interface AdminReport extends Report {
   patrolRouteId?: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  events?: ReportEvent[];
 }
 
 export interface RecycleStation {

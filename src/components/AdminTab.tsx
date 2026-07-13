@@ -10,11 +10,16 @@ import {
   type ReportStatus,
 } from '../admin';
 import { recordAdminDemoLogin } from '../backend';
-import type { Report } from '../types';
+import type { AdminReport, AiCaseClassification, ManualRubric, PatrolRouteDraft, ProcedureConfig } from '../types';
+import ManualRubricForm from './ManualRubricForm';
+import ProcedureConfigPanel from './ProcedureConfigPanel';
+import CaseClassificationPanel from './CaseClassificationPanel';
+import PatrolPlanner from './PatrolPlanner';
 
 interface AdminTabProps {
-  reports: Report[];
-  onUpdateReport: (reportId: string, nextStatus: ReportStatus, note: string) => void;
+  reports: AdminReport[];
+  onPatchReport: (reportId: string, patch: Partial<AdminReport>, note?: string) => void;
+  onConfirmPatrolRoute: (route: PatrolRouteDraft) => void;
   onResetDemoReports: () => void;
   onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
@@ -35,7 +40,7 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
   dismissed: 'bg-zinc-200 text-zinc-700',
 };
 
-export default function AdminTab({ reports, onUpdateReport, onResetDemoReports, onNotify }: AdminTabProps) {
+export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute, onResetDemoReports, onNotify }: AdminTabProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => hasAdminSession());
   const [password, setPassword] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(reports[0]?.id || null);
@@ -134,7 +139,7 @@ export default function AdminTab({ reports, onUpdateReport, onResetDemoReports, 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           ['全部案件', reports.length, 'text-zinc-900'],
-          ['待處理', reports.filter((report) => ['pending', 'reviewing', 'noticed', 'scheduled'].includes(report.status)).length, 'text-amber-700'],
+          ['待處理', reports.filter((report) => !['resolved', 'dismissed', 'duplicate'].includes(report.status)).length, 'text-amber-700'],
           ['已清理', reports.filter((report) => report.status === 'resolved').length, 'text-emerald-700'],
           ['不成立', reports.filter((report) => report.status === 'dismissed').length, 'text-zinc-600'],
         ].map(([label, count, color]) => (
@@ -214,6 +219,34 @@ export default function AdminTab({ reports, onUpdateReport, onResetDemoReports, 
                   : '未有 GPS 座標，日後不會納入示範優化路線。'}
               </div>
 
+              <CaseClassificationPanel
+                report={selectedReport}
+                onApply={(classification: AiCaseClassification) => {
+                  onPatchReport(selectedReport.id, { aiClassification: classification });
+                  onNotify('已保存分類建議，仍需管理員覆核。', 'success');
+                }}
+                onPatch={(patch) => onPatchReport(selectedReport.id, patch)}
+              />
+
+              <ManualRubricForm
+                rubric={selectedReport.manualRubric}
+                onSave={(manualRubric: ManualRubric) => {
+                  onPatchReport(selectedReport.id, {
+                    manualRubric: { ...manualRubric, completedBy: 'admin-demo', completedAt: new Date().toISOString() },
+                  });
+                  onNotify('已保存人工觀察記錄。', 'success');
+                }}
+              />
+
+              <ProcedureConfigPanel
+                selected={selectedReport.procedureConfigSnapshot}
+                confirmed={selectedReport.procedureConfirmed}
+                onConfirm={(config: ProcedureConfig, deadlineAt) => {
+                  onPatchReport(selectedReport.id, { procedureConfigSnapshot: config, procedureConfirmed: true, deadlineAt });
+                  onNotify('已確認本次示範程序。', 'success');
+                }}
+              />
+
               {getAllowedNextStatuses(selectedReport.status).length > 0 && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-600">處理備註（可選）</label>
@@ -229,7 +262,7 @@ export default function AdminTab({ reports, onUpdateReport, onResetDemoReports, 
                       <button
                         type="button"
                         key={nextStatus}
-                        onClick={() => { onUpdateReport(selectedReport.id, nextStatus, note); setNote(''); }}
+                        onClick={() => { onPatchReport(selectedReport.id, { status: nextStatus, ...(nextStatus === 'notice_issued' ? { noticeDate: new Date().toISOString().split('T')[0] } : {}) }, note); setNote(''); }}
                         className="rounded-xl bg-[#006b2c] hover:bg-[#005320] text-white px-3 py-2 text-xs font-bold flex items-center gap-1.5"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" /> 標記為「{getStatusLabel(nextStatus)}」
@@ -256,6 +289,8 @@ export default function AdminTab({ reports, onUpdateReport, onResetDemoReports, 
           )}
         </section>
       </div>
+
+      <PatrolPlanner reports={reports} onConfirm={onConfirmPatrolRoute} />
     </div>
   );
 }
