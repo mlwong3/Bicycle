@@ -176,6 +176,21 @@ export interface Report {
   noticeDate?: string;
   statusHistory?: StatusHistoryEntry[];
   handledBy?: string;
+  caseType?: CaseType;
+  urgency?: Urgency;
+  aiClassification?: AiCaseClassification;
+  manualRubric?: ManualRubricRecord;
+  procedureConfigSnapshot?: ProcedureConfig;
+  deadlineAt?: string;
+  procedureConfirmed?: boolean;
+  coordinatesValid?: boolean;
+  isDuplicate?: boolean;
+  duplicateOf?: string;
+  assignedDepartment?: string;
+  assignedTeam?: string;
+  patrolRouteId?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 export interface AdminReport extends Report {

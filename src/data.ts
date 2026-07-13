@@ -1,4 +1,5 @@
-import { Bike, RecycleStation, EcoPartner, ParkingSpot, Report } from './types';
+import { Bike, RecycleStation, EcoPartner, ParkingSpot } from './types';
+export { INITIAL_REPORTS } from './demoData';
 
 // 不再預設任何示範單車，使用者由 NFC 登記頁自行新增（資料同步至 Firestore）。
 export const INITIAL_BIKES: Bike[] = [];
@@ -287,43 +288,6 @@ export const PARKING_SPOTS: ParkingSpot[] = [
     type: '海傍休閒單車架',
     lat: 22.3822,
     lng: 114.2725,
-  }
-];
-
-export const INITIAL_REPORTS: Report[] = [
-  {
-    id: 'report-1',
-    location: '沙田源禾路體育館外',
-    description: '有單車倒塌在行人路上阻礙通道，輪胎已漏氣。',
-    status: 'resolved',
-    date: '2026-06-15',
-    statusHistory: [
-      { status: 'pending', at: '2026-06-15T09:00:00.000Z', by: 'citizen' },
-      { status: 'reviewing', at: '2026-06-15T10:10:00.000Z', by: 'admin-demo', note: '已接收示範案件。' },
-      { status: 'resolved', at: '2026-06-16T15:20:00.000Z', by: 'admin-demo', note: '已完成清理。' },
-    ],
-  },
-  {
-    id: 'report-2',
-    location: '大埔單車徑近廣福邨段',
-    description: '發現共享單車被棄置於草叢中，擋泥板破損。',
-    status: 'resolved',
-    date: '2026-06-18',
-    statusHistory: [
-      { status: 'pending', at: '2026-06-18T08:30:00.000Z', by: 'citizen' },
-      { status: 'reviewing', at: '2026-06-18T09:00:00.000Z', by: 'admin-demo' },
-      { status: 'resolved', at: '2026-06-19T14:00:00.000Z', by: 'admin-demo', note: '示範案件已結案。' },
-    ],
-  },
-  {
-    id: 'report-3',
-    location: '香港仔海傍道 12 號',
-    description: '欄杆旁有私家單車鏈條斷裂且隨意棄置。',
-    status: 'pending',
-    date: '2026-06-19',
-    statusHistory: [
-      { status: 'pending', at: '2026-06-19T11:00:00.000Z', by: 'citizen' },
-    ],
   }
 ];
 

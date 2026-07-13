@@ -1,7 +1,8 @@
 import { carbonSaved } from './carbon';
 import { getAnonymousUid, getFirebaseServices, isFirebaseConfigured } from './firebase';
 import { getInlineReportImageExtension, isInlineReportImage } from './reportMedia';
-import { Bike, Report } from './types';
+import { toAdminReport, toPublicReport } from './caseAdapter';
+import { AdminReport, Bike, PublicReport, Report } from './types';
 
 export { isInlineReportImage } from './reportMedia';
 
@@ -118,6 +119,20 @@ export async function fetchAllReports(): Promise<Report[] | null> {
   } catch {
     return null;
   }
+}
+
+/** 公開／內部分層的相容讀取入口；Firebase 不可用時由呼叫端保留本機示範資料。 */
+export async function getAdminReports(): Promise<AdminReport[] | null> {
+  const reports = await fetchAllReports();
+  return reports?.map(toAdminReport) || null;
+}
+
+export async function getCitizenReports(reporterUid?: string): Promise<PublicReport[] | null> {
+  const reports = await fetchAllReports();
+  if (!reports) return null;
+  return reports
+    .filter((report) => !reporterUid || !report.reporterUid || report.reporterUid === reporterUid)
+    .map(toPublicReport);
 }
 
 /** 示範模式案件更新：只同步管理欄位，不修改 citizen 建立者資料。 */
