@@ -1,3 +1,5 @@
+import type { ReportStatus, StatusHistoryEntry } from './admin';
+
 export interface Bike {
   id: string;
   model: string;
@@ -11,9 +13,14 @@ export interface Report {
   id: string;
   imageUrl?: string;
   location: string;
+  lat?: number;
+  lng?: number;
   description: string;
-  status: 'pending' | 'resolved';
+  status: ReportStatus;
   date: string;
+  noticeDate?: string;
+  statusHistory?: StatusHistoryEntry[];
+  handledBy?: string;
 }
 
 export interface RecycleStation {

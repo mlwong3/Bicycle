@@ -5,6 +5,7 @@ import {
   getAllowedNextStatuses,
   getPatrolEligibleReports,
 } from '../src/admin';
+import { isInlineReportImage } from '../src/reportMedia';
 
 test('pending only advances to reviewing or dismissed', () => {
   assert.deepEqual(getAllowedNextStatuses('pending'), ['reviewing', 'dismissed']);
@@ -47,4 +48,11 @@ test('legacy reports without history stay valid but cannot become patrol candida
   };
 
   assert.deepEqual(getPatrolEligibleReports([legacy]), []);
+});
+
+test('only image data URLs are eligible for report image upload', () => {
+  assert.equal(isInlineReportImage('data:image/png;base64,AAA'), true);
+  assert.equal(isInlineReportImage('https://example.com/bike.jpg'), false);
+  assert.equal(isInlineReportImage('data:text/plain;base64,AAA'), false);
+  assert.equal(isInlineReportImage(undefined), false);
 });
