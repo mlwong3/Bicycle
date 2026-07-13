@@ -93,6 +93,19 @@ export interface AiCaseClassification {
   rationale: string[];
   confidence: 'low' | 'medium' | 'high';
   source: 'ai-text-classification' | 'rule-fallback';
+  suggestedAction: '建議現場覆核' | '建議補充資料' | '建議一般程序處理' | '建議交由負責部門再確認';
+}
+
+export interface AiClassificationInput {
+  reportId: string;
+  description: string;
+  citizenTags: string[];
+  locationLabel: string;
+  hasCoordinates: boolean;
+  manualRubricSummary?: {
+    observedIndicators: string[];
+    unobservableIndicators: string[];
+  };
 }
 
 export interface PublicReport {
