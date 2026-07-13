@@ -32,7 +32,7 @@
 - Test: `tests/reportStatus.test.ts`
 
 **Interfaces:**
-- `ReportStatus`, `CaseType`, `Urgency`, `PublicReport`, `AdminReport`, `ReportEvent` 放在 `src/types.ts`。
+- `ReportStatus`, `CaseType`, `Urgency`, `PublicReport`, `AdminReport`, `ReportEvent` 放在 `src/types.ts`；狀態機共 13 個狀態。
 - `canTransition(from: ReportStatus, to: ReportStatus): boolean`。
 - `getStatusLabel(status: ReportStatus): string`。
 - `toPublicStatus(status: ReportStatus): PublicReport['publicStatus']`。

@@ -4,14 +4,14 @@ import { getCitizenStatusLabel } from '../src/admin';
 import { createCitizenReport } from '../src/reportWorkflow';
 
 test('citizen status mapping hides internal workflow details', () => {
-  assert.equal(getCitizenStatusLabel('noticed'), '處理中');
+  assert.equal(getCitizenStatusLabel('notice_issued'), '處理中');
   assert.equal(getCitizenStatusLabel('scheduled'), '處理中');
-  assert.equal(getCitizenStatusLabel('resolved'), '已清理');
+  assert.equal(getCitizenStatusLabel('resolved'), '已完成處理');
   assert.equal(getCitizenStatusLabel('dismissed'), '不成立');
 });
 
 test('all internal statuses have citizen-facing labels', () => {
-  for (const status of ['pending', 'reviewing', 'noticed', 'scheduled', 'resolved', 'dismissed'] as const) {
+  for (const status of ['pending', 'reviewing', 'classified', 'notice_issued', 'scheduled', 'resolved', 'dismissed'] as const) {
     assert.notEqual(getCitizenStatusLabel(status), undefined);
   }
 });

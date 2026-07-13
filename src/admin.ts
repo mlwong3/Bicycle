@@ -1,11 +1,11 @@
-export type ReportStatus = 'pending' | 'reviewing' | 'noticed' | 'scheduled' | 'resolved' | 'dismissed';
+import {
+  getAllowedNextStatuses as getWorkflowAllowedNextStatuses,
+  getStatusLabel as getWorkflowStatusLabel,
+  getPublicStatusLabel,
+} from './reportStatus';
+import type { ReportStatus, StatusHistoryEntry } from './types';
 
-export interface StatusHistoryEntry {
-  status: ReportStatus;
-  at: string;
-  by: string;
-  note?: string;
-}
+export type { ReportStatus, StatusHistoryEntry } from './types';
 
 type ReportWithWorkflow = {
   status: ReportStatus;
@@ -14,50 +14,23 @@ type ReportWithWorkflow = {
 };
 
 type ReportWithCoordinates = {
-  status: ReportStatus;
+  status: string;
   lat?: number;
   lng?: number;
 };
 
 export const ADMIN_SESSION_KEY = 'bike_trace:admin_demo_session';
 
-const ALLOWED_NEXT_STATUSES: Record<ReportStatus, ReportStatus[]> = {
-  pending: ['reviewing', 'dismissed'],
-  reviewing: ['noticed', 'dismissed'],
-  noticed: ['scheduled', 'dismissed'],
-  scheduled: ['resolved', 'dismissed'],
-  resolved: [],
-  dismissed: [],
-};
-
-const STATUS_LABELS: Record<ReportStatus, string> = {
-  pending: '待審核',
-  reviewing: '覆核中',
-  noticed: '已貼告示',
-  scheduled: '已排程',
-  resolved: '已清理',
-  dismissed: '不成立',
-};
-
-const CITIZEN_STATUS_LABELS: Record<ReportStatus, string> = {
-  pending: '待審核',
-  reviewing: '處理中',
-  noticed: '處理中',
-  scheduled: '處理中',
-  resolved: '已清理',
-  dismissed: '不成立',
-};
-
 export function getAllowedNextStatuses(status: ReportStatus): ReportStatus[] {
-  return ALLOWED_NEXT_STATUSES[status];
+  return getWorkflowAllowedNextStatuses(status);
 }
 
 export function getStatusLabel(status: ReportStatus): string {
-  return STATUS_LABELS[status];
+  return getWorkflowStatusLabel(status);
 }
 
 export function getCitizenStatusLabel(status: ReportStatus): string {
-  return CITIZEN_STATUS_LABELS[status];
+  return getPublicStatusLabel(status);
 }
 
 export function appendStatusHistory<T extends ReportWithWorkflow>(

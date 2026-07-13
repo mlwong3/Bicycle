@@ -170,7 +170,7 @@ export default function App() {
     const updatedAt = new Date();
     const updatedReport = {
       ...appendStatusHistory<Report>(currentReport, nextStatus, 'admin-demo', note, updatedAt.toISOString()),
-      ...(nextStatus === 'noticed' && !currentReport.noticeDate ? { noticeDate: updatedAt.toISOString().split('T')[0] } : {}),
+      ...(nextStatus === 'notice_issued' && !currentReport.noticeDate ? { noticeDate: updatedAt.toISOString().split('T')[0] } : {}),
     };
     setReports((prev) => prev.map((report) => report.id === reportId ? updatedReport : report));
     void syncReportStatus(updatedReport);

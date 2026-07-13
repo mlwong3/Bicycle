@@ -22,9 +22,16 @@ interface AdminTabProps {
 const STATUS_STYLES: Record<ReportStatus, string> = {
   pending: 'bg-amber-100 text-amber-800',
   reviewing: 'bg-sky-100 text-sky-800',
-  noticed: 'bg-violet-100 text-violet-800',
+  classified: 'bg-cyan-100 text-cyan-800',
+  field_review_required: 'bg-orange-100 text-orange-800',
+  notice_issued: 'bg-violet-100 text-violet-800',
+  deadline_expired: 'bg-rose-100 text-rose-800',
+  clearance_approved: 'bg-teal-100 text-teal-800',
   scheduled: 'bg-indigo-100 text-indigo-800',
+  in_progress: 'bg-blue-100 text-blue-800',
   resolved: 'bg-emerald-100 text-emerald-800',
+  needs_information: 'bg-yellow-100 text-yellow-800',
+  duplicate: 'bg-zinc-200 text-zinc-700',
   dismissed: 'bg-zinc-200 text-zinc-700',
 };
 
@@ -139,7 +146,7 @@ export default function AdminTab({ reports, onUpdateReport, onResetDemoReports, 
       </section>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {(['all', 'pending', 'reviewing', 'noticed', 'scheduled', 'resolved', 'dismissed'] as const).map((status) => (
+        {(['all', 'pending', 'reviewing', 'classified', 'field_review_required', 'notice_issued', 'deadline_expired', 'clearance_approved', 'scheduled', 'in_progress', 'resolved', 'needs_information', 'duplicate', 'dismissed'] as const).map((status) => (
           <button
             type="button"
             key={status}
