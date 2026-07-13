@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bike, Report } from '../types';
 import { carbonSaved, CAR_CO2_PER_KM } from '../carbon';
+import { getCitizenStatusLabel } from '../admin';
 import { 
   Plus, CheckCircle, AlertCircle, Trash2, Award, 
   MapPin, HelpCircle, ChevronRight, Bell, Info,
@@ -58,7 +59,7 @@ export default function PersonalTab({
     { name: '科學園海濱單車徑', length: '3.0 km', area: '白石角' },
   ];
 
-  const pendingReportsCount = reports.filter(r => r.status === 'pending').length;
+  const processingReportsCount = reports.filter(r => ['pending', 'reviewing', 'noticed', 'scheduled'].includes(r.status)).length;
   const resolvedReportsCount = reports.filter(r => r.status === 'resolved').length;
 
   // 減碳 = 累計騎乘距離 × 官方排放係數（取代原本捏造公式）
@@ -199,9 +200,9 @@ export default function PersonalTab({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              {pendingReportsCount > 0 ? (
+              {processingReportsCount > 0 ? (
                 <span className="text-[9px] font-black text-rose-500 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full">
-                  {pendingReportsCount}件待核
+                  {processingReportsCount}件處理中
                 </span>
               ) : (
                 <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-[#006b2c] transition-colors" />
@@ -355,9 +356,11 @@ export default function PersonalTab({
                           <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border shrink-0 ${
                             rep.status === 'resolved'
                               ? 'bg-green-50 text-[#006b2c] border-green-100'
-                              : 'bg-rose-50 text-rose-500 border-rose-100'
+                              : rep.status === 'dismissed'
+                                ? 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                                : 'bg-rose-50 text-rose-500 border-rose-100'
                           }`}>
-                            {rep.status === 'resolved' ? '已結辦' : '待核'}
+                            {getCitizenStatusLabel(rep.status)}
                           </span>
                         </div>
                         <p className="text-[11px] text-zinc-500 mt-1.5 leading-relaxed">{rep.description}</p>

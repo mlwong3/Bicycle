@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bike, Report } from './types';
+import type { ReportStatus } from './admin';
 import { INITIAL_BIKES, INITIAL_REPORTS } from './data';
 
 import Onboarding from './components/Onboarding';
@@ -10,10 +11,12 @@ import NfcTab from './components/NfcTab';
 import PersonalTab from './components/PersonalTab';
 import MenuSidebar from './components/MenuSidebar';
 import SettingsModal from './components/SettingsModal';
+import AdminTab from './components/AdminTab';
 
 import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
 import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
-import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncTrip, uploadReportImage } from './backend';
+import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStatus, syncTrip, uploadReportImage } from './backend';
+import { appendStatusHistory } from './admin';
 import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
@@ -160,6 +163,24 @@ export default function App() {
     void syncTrip(capped);
   };
 
+  const handleUpdateReport = (reportId: string, nextStatus: ReportStatus, note: string) => {
+    const currentReport = reports.find((report) => report.id === reportId);
+    if (!currentReport) return;
+
+    const updatedAt = new Date();
+    const updatedReport = {
+      ...appendStatusHistory<Report>(currentReport, nextStatus, 'admin-demo', note, updatedAt.toISOString()),
+      ...(nextStatus === 'noticed' && !currentReport.noticeDate ? { noticeDate: updatedAt.toISOString().split('T')[0] } : {}),
+    };
+    setReports((prev) => prev.map((report) => report.id === reportId ? updatedReport : report));
+    void syncReportStatus(updatedReport);
+    showNotice(`案件已更新為「${nextStatus === 'resolved' ? '已清理' : '處理中'}」。`, 'success');
+  };
+
+  const handleResetDemoReports = () => {
+    setReports(INITIAL_REPORTS);
+  };
+
   const toggleSaveParking = (id: string) => {
     setSavedParkingIds((prev) => {
       if (prev.includes(id)) {
@@ -195,6 +216,7 @@ export default function App() {
   const currentTabName = () => {
     switch (currentTab) {
       case 'map': return '地圖導航';
+      case 'admin': return '管理員工作台';
       default: return '單車管理';
     }
   };
@@ -227,6 +249,7 @@ export default function App() {
             { id: 'report', name: '違規舉報與回收', icon: AlertTriangle },
             { id: 'nfc', name: 'NFC 登記保護', icon: Cpu },
             { id: 'personal', name: '個人中心 & 數據', icon: User },
+            { id: 'admin', name: '管理員模式', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = currentTab === tab.id;
@@ -336,6 +359,14 @@ export default function App() {
                   totalDistanceKm={totalDistanceKm}
                   onUnbindBike={handleUnbindBike}
                   onNavigateToTab={handleSelectTab}
+                  onNotify={showNotice}
+                />
+              )}
+              {currentTab === 'admin' && (
+                <AdminTab
+                  reports={reports}
+                  onUpdateReport={handleUpdateReport}
+                  onResetDemoReports={handleResetDemoReports}
                   onNotify={showNotice}
                 />
               )}

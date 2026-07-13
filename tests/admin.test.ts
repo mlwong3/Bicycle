@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ADMIN_SESSION_KEY,
   appendStatusHistory,
+  endAdminSession,
   getAllowedNextStatuses,
   getPatrolEligibleReports,
+  hasAdminSession,
+  isAdminPasswordValid,
+  startAdminSession,
 } from '../src/admin';
 import { isInlineReportImage } from '../src/reportMedia';
 
@@ -55,4 +60,36 @@ test('only image data URLs are eligible for report image upload', () => {
   assert.equal(isInlineReportImage('https://example.com/bike.jpg'), false);
   assert.equal(isInlineReportImage('data:text/plain;base64,AAA'), false);
   assert.equal(isInlineReportImage(undefined), false);
+});
+
+test('admin session uses a dedicated session key and is cleared on logout', () => {
+  const storage = new Map<string, string>();
+  const originalWindow = globalThis.window;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) || null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    },
+  });
+
+  try {
+    assert.equal(ADMIN_SESSION_KEY, 'bike_trace:admin_demo_session');
+    assert.equal(isAdminPasswordValid('admin2026', 'admin2026'), true);
+    assert.equal(isAdminPasswordValid('wrong', 'admin2026'), false);
+    assert.equal(hasAdminSession(), false);
+    startAdminSession();
+    assert.equal(hasAdminSession(), true);
+    endAdminSession();
+    assert.equal(hasAdminSession(), false);
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+  }
 });
