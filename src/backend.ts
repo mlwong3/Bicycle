@@ -1,6 +1,10 @@
 import { carbonSaved } from './carbon';
 import { getAnonymousUid, getFirebaseServices, isFirebaseConfigured } from './firebase';
-import { Bike, Report } from './types';
+import { getInlineReportImageExtension, isInlineReportImage } from './reportMedia';
+import { toAdminReport, toPublicReport } from './caseAdapter';
+import { AdminReport, Bike, PublicReport, Report } from './types';
+
+export { isInlineReportImage } from './reportMedia';
 
 function safeId(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9_-]/g, '-').replace(/-+/g, '-');
@@ -57,6 +61,99 @@ export async function syncReport(report: Report): Promise<void> {
     updatedAt: serverTimestamp(),
     createdAt: serverTimestamp(),
   }, { merge: true });
+}
+
+/**
+ * 示範用：上傳本機相片以供跨裝置顯示；失敗時保留原 data URL。
+ * 正式部署仍須另行收緊 Storage Rules 及實測權限。
+ */
+export async function uploadReportImage(imageUrl: string | undefined, reportId: string): Promise<string | undefined> {
+  if (!isInlineReportImage(imageUrl)) return imageUrl;
+
+  try {
+    const services = await getFirebaseServices();
+    const uid = await getAnonymousUid();
+    if (!services || !uid) return imageUrl;
+
+    const { getDownloadURL, getStorage, ref, uploadString } = await import('firebase/storage');
+    const storage = getStorage(services.app);
+    const storageRef = ref(storage, `reports/${uid}/${reportId}.${getInlineReportImageExtension(imageUrl)}`);
+    await uploadString(storageRef, imageUrl, 'data_url');
+    return await getDownloadURL(storageRef);
+  } catch {
+    return imageUrl;
+  }
+}
+
+/** 示範模式登入紀錄；Rules 拒絕或離線時回傳 false，不中斷本機展示。 */
+export async function recordAdminDemoLogin(): Promise<boolean> {
+  try {
+    const services = await getFirebaseServices();
+    const uid = await getAnonymousUid();
+    if (!services || !uid) return false;
+
+    const { doc, serverTimestamp, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(services.db, 'admins', uid), {
+      uid,
+      role: 'demo-admin',
+      lastLoginAt: serverTimestamp(),
+    }, { merge: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 管理員全案件讀取的預留介面。現行 Rules 可能因擁有者限制而回傳 null，
+ * AdminTab 在此情況下仍使用 App state 的本機示範案件。
+ */
+export async function fetchAllReports(): Promise<Report[] | null> {
+  try {
+    const services = await getFirebaseServices();
+    if (!services) return null;
+
+    const { collection, getDocs } = await import('firebase/firestore');
+    const snapshot = await getDocs(collection(services.db, 'reports'));
+    return snapshot.docs.map((item) => item.data() as Report);
+  } catch {
+    return null;
+  }
+}
+
+/** 公開／內部分層的相容讀取入口；Firebase 不可用時由呼叫端保留本機示範資料。 */
+export async function getAdminReports(): Promise<AdminReport[] | null> {
+  const reports = await fetchAllReports();
+  return reports?.map(toAdminReport) || null;
+}
+
+export async function getCitizenReports(reporterUid?: string): Promise<PublicReport[] | null> {
+  const reports = await fetchAllReports();
+  if (!reports) return null;
+  return reports
+    .filter((report) => !reporterUid || !report.reporterUid || report.reporterUid === reporterUid)
+    .map(toPublicReport);
+}
+
+/** 示範模式案件更新：只同步管理欄位，不修改 citizen 建立者資料。 */
+export async function syncReportStatus(report: Report): Promise<boolean> {
+  try {
+    const services = await getFirebaseServices();
+    const uid = await getAnonymousUid();
+    if (!services || !uid) return false;
+
+    const { doc, serverTimestamp, setDoc } = await import('firebase/firestore');
+    await setDoc(doc(services.db, 'reports', report.id), {
+      status: report.status,
+      statusHistory: report.statusHistory || [],
+      noticeDate: report.noticeDate || null,
+      handledBy: report.handledBy || uid,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function syncTrip(distanceKm: number): Promise<void> {
