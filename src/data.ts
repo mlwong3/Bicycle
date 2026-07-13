@@ -297,6 +297,11 @@ export const INITIAL_REPORTS: Report[] = [
     description: '有單車倒塌在行人路上阻礙通道，輪胎已漏氣。',
     status: 'resolved',
     date: '2026-06-15',
+    statusHistory: [
+      { status: 'pending', at: '2026-06-15T09:00:00.000Z', by: 'citizen' },
+      { status: 'reviewing', at: '2026-06-15T10:10:00.000Z', by: 'admin-demo', note: '已接收示範案件。' },
+      { status: 'resolved', at: '2026-06-16T15:20:00.000Z', by: 'admin-demo', note: '已完成清理。' },
+    ],
   },
   {
     id: 'report-2',
@@ -304,6 +309,11 @@ export const INITIAL_REPORTS: Report[] = [
     description: '發現共享單車被棄置於草叢中，擋泥板破損。',
     status: 'resolved',
     date: '2026-06-18',
+    statusHistory: [
+      { status: 'pending', at: '2026-06-18T08:30:00.000Z', by: 'citizen' },
+      { status: 'reviewing', at: '2026-06-18T09:00:00.000Z', by: 'admin-demo' },
+      { status: 'resolved', at: '2026-06-19T14:00:00.000Z', by: 'admin-demo', note: '示範案件已結案。' },
+    ],
   },
   {
     id: 'report-3',
@@ -311,6 +321,9 @@ export const INITIAL_REPORTS: Report[] = [
     description: '欄杆旁有私家單車鏈條斷裂且隨意棄置。',
     status: 'pending',
     date: '2026-06-19',
+    statusHistory: [
+      { status: 'pending', at: '2026-06-19T11:00:00.000Z', by: 'citizen' },
+    ],
   }
 ];
 

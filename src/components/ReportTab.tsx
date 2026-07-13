@@ -2,18 +2,20 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RECYCLE_STATIONS, ECO_PARTNERS } from '../data';
 import { RecycleStation, EcoPartner, Report } from '../types';
-import { getCurrentPosition, isGeolocationSupported } from '../geolocation';
+import { getCurrentPosition, isGeolocationSupported, type LatLng } from '../geolocation';
 import { reverseGeocode } from '../mapbox';
+import type { CitizenReportSubmission } from '../reportWorkflow';
 import { Camera, MapPin, Send, ChevronRight, Star, Info, X, Phone, CheckCircle, Navigation, Award } from 'lucide-react';
 
 interface ReportTabProps {
-  onAddReport: (newReport: Omit<Report, 'id' | 'status' | 'date'>) => void;
+  onAddReport: (newReport: CitizenReportSubmission) => void;
   onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
 export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
   const [desc, setDesc] = useState('');
   const [locationStr, setLocationStr] = useState('');
+  const [locationCoords, setLocationCoords] = useState<LatLng | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
@@ -35,6 +37,7 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
     setIsLocating(true);
     try {
       const pos = await getCurrentPosition();
+      setLocationCoords(pos);
       const address = await reverseGeocode(pos);
       // 有地址用地址，否則退回經緯度
       setLocationStr(address || `緯度 ${pos.lat.toFixed(5)}, 經度 ${pos.lng.toFixed(5)}`);
@@ -91,13 +94,15 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
       onAddReport({
         location: locationStr,
         description: desc,
-        imageUrl: imgUrl || undefined
+        imageUrl: imgUrl || undefined,
+        ...(locationCoords ? { lat: locationCoords.lat, lng: locationCoords.lng } : {}),
       });
 
       setSubmitting(false);
       setIsSubmitSuccess(true);
       setDesc('');
       setImgUrl(null);
+      setLocationCoords(null);
       onNotify('舉報已提交，並已加入待核紀錄。', 'success');
     }, 1200);
   };
@@ -160,7 +165,10 @@ export default function ReportTab({ onAddReport, onNotify }: ReportTabProps) {
                 id="location-display-input"
                 type="text"
                 value={locationStr}
-                onChange={(e) => setLocationStr(e.target.value)}
+                onChange={(e) => {
+                  setLocationStr(e.target.value);
+                  setLocationCoords(null);
+                }}
                 placeholder="請手動輸入位置，或按右側「GPS 定位」"
                 className="w-full bg-zinc-50 border border-zinc-200/80 rounded-xl py-3 pl-11 pr-24 text-xs font-medium text-zinc-800 placeholder:text-zinc-400 outline-none focus:ring-2 focus:ring-[#006b2c] focus:border-transparent transition-all"
               />

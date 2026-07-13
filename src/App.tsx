@@ -13,7 +13,8 @@ import SettingsModal from './components/SettingsModal';
 
 import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
 import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
-import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncTrip } from './backend';
+import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncTrip, uploadReportImage } from './backend';
+import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
 interface Notice {
@@ -129,19 +130,25 @@ export default function App() {
     setBikes((prev) => prev.filter(bike => bike.id !== id));
   };
 
-  const handleAddReport = (newReportData: Omit<Report, 'id' | 'status' | 'date'>) => {
-    const newReport: Report = {
+  const handleAddReport = (newReportData: CitizenReportSubmission) => {
+    const submittedAt = new Date();
+    const newReport = createCitizenReport({
+      ...newReportData,
       id: createId('report'),
-      location: newReportData.location,
-      description: newReportData.description,
-      imageUrl: newReportData.imageUrl,
-      status: 'pending',
-      date: new Date().toISOString().split('T')[0]
-    };
+      date: submittedAt.toISOString().split('T')[0],
+      at: submittedAt.toISOString(),
+    });
     setReports((prev) => [newReport, ...prev]);
     setUserScore((prev) => prev + 50); // Award score for reporting
     void syncReport(newReport).then(() => {
       if (isCloudBackendEnabled()) showNotice('舉報紀錄已同步至 Firebase。', 'success');
+    });
+
+    void uploadReportImage(newReport.imageUrl, newReport.id).then((uploadedImageUrl) => {
+      if (!uploadedImageUrl || uploadedImageUrl === newReport.imageUrl) return;
+      const uploadedReport = { ...newReport, imageUrl: uploadedImageUrl };
+      setReports((prev) => prev.map((report) => report.id === newReport.id ? uploadedReport : report));
+      void syncReport(uploadedReport);
     });
   };
 
