@@ -58,6 +58,14 @@ export interface ManualRubric {
   lock: RubricObservation;
 }
 
+export interface RubricSummary {
+  observableCount: number;
+  scoredCount: number;
+  totalScore: number | null;
+  maximumObservableScore: number;
+  dataSufficiency: 'sufficient' | 'partial' | 'insufficient';
+}
+
 export interface ManualRubricRecord extends ManualRubric {
   completedBy: string;
   completedAt: string;
