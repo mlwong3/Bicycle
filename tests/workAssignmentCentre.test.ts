@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { getWorkOrderLockReason, getWorkOrderQueueLabel } from '../src/components/WorkAssignmentCentre';
+import type { WorkOrder } from '../src/types';
+
+const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({
+  id: 'wo-1', caseId: 'case-1', taskType: 'site_verification', title: '現場核實',
+  leadDepartment: 'FEHD', supportingDepartments: [], location: '大埔單車徑', district: '大埔',
+  priority: 'normal', prerequisiteWorkOrderIds: [], requiredCapabilities: [], requiredEquipment: [],
+  evidenceChecklist: [], status: 'scheduled', assignmentHistory: [],
+  createdAt: '2026-07-15T00:00:00.000Z', updatedAt: '2026-07-15T00:00:00.000Z',
+  ...overrides,
+});
+
+test('pure work-order helpers explain prerequisite and schedule locks', () => {
+  const blocked = order({ prerequisiteWorkOrderIds: ['wo-pre'] });
+  const prerequisite = order({ id: 'wo-pre', status: 'in_progress' });
+  assert.equal(getWorkOrderLockReason(blocked, [blocked, prerequisite], new Date('2026-07-15T01:00:00.000Z')), '等待前置工作完成');
+  assert.equal(getWorkOrderLockReason(order({ executableAfter: '2026-07-16T00:00:00.000Z' }), [order({ executableAfter: '2026-07-16T00:00:00.000Z' })], new Date('2026-07-15T01:00:00.000Z')), '尚未到可執行時間');
+});
+
+test('pure queue helper uses the required human-readable labels', () => {
+  assert.equal(getWorkOrderQueueLabel('draft'), '待分配');
+  assert.equal(getWorkOrderQueueLabel('awaiting_acceptance'), '待接收');
+  assert.equal(getWorkOrderQueueLabel('in_progress'), '進行中');
+});

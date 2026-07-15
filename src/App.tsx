@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AdminReport, Bike, JointOperation, Report, PatrolRouteDraft, WorkOrder } from './types';
 import { INITIAL_BIKES, INITIAL_REPORTS } from './data';
-import { INITIAL_JOINT_OPERATIONS, INITIAL_WORK_ORDERS } from './demoData';
+import { DEMO_TEAMS, INITIAL_JOINT_OPERATIONS, INITIAL_WORK_ORDERS } from './demoData';
 
 import Onboarding from './components/Onboarding';
 import MapTab from './components/MapTab';
@@ -413,7 +413,12 @@ export default function App() {
               {currentTab === 'admin' && (
                 <AdminTab
                   reports={adminReports}
+                  workOrders={workOrders}
+                  jointOperations={jointOperations}
+                  teams={DEMO_TEAMS}
                   onPatchReport={handlePatchAdminReport}
+                  onUpdateWorkOrder={handleUpdateWorkOrder}
+                  onCreateTemplateWorkOrders={handleCreateTemplateWorkOrders}
                   onConfirmPatrolRoute={handleConfirmPatrolRoute}
                   onResetDemoReports={handleResetDemoReports}
                   onNotify={showNotice}
