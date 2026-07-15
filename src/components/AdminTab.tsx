@@ -289,7 +289,7 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
         </section>
       </div>
 
-      <PatrolPlanner reports={reports} onConfirm={onConfirmPatrolRoute} />
+      <PatrolPlanner reports={reports} workOrders={workOrders} onConfirm={onConfirmPatrolRoute} />
       <WorkAssignmentCentre reports={reports} workOrders={workOrders} teams={teams} onUpdateWorkOrder={onUpdateWorkOrder} onSelectCase={(id) => { setSelectedId(id); }} onNotify={onNotify} />
       </>}
     </div>

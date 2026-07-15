@@ -16,10 +16,11 @@ import AdminTab from './components/AdminTab';
 import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
 import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
 import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStatus, syncTrip, uploadReportImage } from './backend';
-import { applyAdminPatch, applyPatrolConfirmation, toAdminReport } from './caseAdapter';
+import { applyAdminPatch, toAdminReport } from './caseAdapter';
 import { getStatusLabel } from './reportStatus';
 import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
 import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
+import { applyWorkOrderRouteConfirmation } from './workOrders';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
 interface Notice {
@@ -193,11 +194,9 @@ export default function App() {
 
   const handleConfirmPatrolRoute = (route: PatrolRouteDraft) => {
     const at = new Date().toISOString();
-    const currentAdminReports = reports.map(toAdminReport);
-    const updatedAdminReports = applyPatrolConfirmation(currentAdminReports, route, 'admin-demo', at, `demo-route-${Date.now()}`);
-    setReports((prev) => prev.map((report) => updatedAdminReports.find((item) => item.id === report.id) || report));
-    updatedAdminReports.filter((report) => route.reportIds.includes(report.id)).forEach((report) => { void syncReportStatus(report); });
-    showNotice('巡查次序已確認，案件已進入示範排程。', 'success');
+    const routeId = `demo-route-${Date.now()}`;
+    setWorkOrders((previous) => applyWorkOrderRouteConfirmation(previous, route, 'admin-demo', at, routeId));
+    showNotice('巡邏路線已確認，已記錄於工作單；案件狀態不會自動變更。', 'success');
   };
 
   const handleUpdateWorkOrder = (next: WorkOrder) => {

@@ -232,22 +232,28 @@ export interface Coordinates {
 }
 
 export type PatrolTravelMode = 'inspection-walking' | 'inspection-driving' | 'clearance-vehicle';
+export type PatrolTaskGroup = 'verification' | 'notice' | 'removal';
 
 export interface PatrolOptions {
   travelMode: PatrolTravelMode;
+  taskGroup: PatrolTaskGroup;
   maxStops: number;
   serviceMinutesPerStop: number;
   routeSource?: 'mapbox' | 'leaflet-estimate' | 'straight-line-estimate';
 }
 
 export interface PatrolRouteDraft {
-  reportIds: string[];
+  workOrderIds: string[];
   orderedStops: Array<{
-    reportId: string;
+    workOrderId: string;
+    caseId: string;
     order: number;
     priorityScore: number;
     estimatedServiceMinutes: number;
   }>;
+  department: DepartmentCode;
+  actionDate: string;
+  taskGroup: PatrolTaskGroup;
   startPoint: Coordinates;
   travelMode: PatrolTravelMode;
   estimatedDistanceKm: number;

@@ -1,4 +1,4 @@
-import type { Team, WorkOrder, WorkOrderHistoryEntry, WorkOrderStatus } from './types';
+import type { PatrolRouteDraft, Team, WorkOrder, WorkOrderHistoryEntry, WorkOrderStatus } from './types';
 
 const NEXT: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
   draft: ['awaiting_acceptance', 'cancelled'],
@@ -98,4 +98,16 @@ export function applyWorkOrderTransition(
       ...(reason.trim() ? { reason: reason.trim() } : {}),
     }],
   };
+}
+
+export function applyWorkOrderRouteConfirmation(
+  orders: WorkOrder[], route: PatrolRouteDraft, actorUid: string, at: string, routeId: string,
+): WorkOrder[] {
+  const routeIds = new Set(route.workOrderIds);
+  return orders.map((order) => routeIds.has(order.id) ? {
+    ...order,
+    patrolRouteId: routeId,
+    updatedAt: at,
+    assignmentHistory: [...order.assignmentHistory, { at, actorUid, action: 'route_assigned' as const }],
+  } : order);
 }
