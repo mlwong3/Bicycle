@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyWorkOrderTransition, isWorkOrderReady } from '../src/workOrders';
-import type { WorkOrder } from '../src/types';
+import { applyWorkOrderTransition, assignWorkOrder, isWorkOrderReady } from '../src/workOrders';
+import type { Team, WorkOrder } from '../src/types';
 
 const baseWorkOrder: WorkOrder = {
   id: 'wo-1',
@@ -23,6 +23,12 @@ const baseWorkOrder: WorkOrder = {
   assignmentHistory: [],
   createdAt: '2026-07-15T09:00:00.000Z',
   updatedAt: '2026-07-15T09:00:00.000Z',
+};
+
+const validTeam: Team = {
+  id: 'team-2', name: '食環 B 隊', department: 'HAD', districts: ['沙田'],
+  capabilities: ['site-verification'], equipment: [], onDuty: true,
+  dailyCapacity: 5, activeWorkload: 1,
 };
 
 test('downstream work is not ready before every prerequisite is completed', () => {
@@ -135,4 +141,22 @@ test('completion requires every evidence item and records an audit entry', () =>
   const completed = applyWorkOrderTransition(evidenced, 'completed', 'staff-1', '2026-07-15T10:00:00.000Z', '', [evidenced], new Date('2026-07-15T10:00:00.000Z'));
   assert.equal(completed.status, 'completed');
   assert.equal(completed.assignmentHistory.at(-1)?.action, 'status_changed');
+});
+
+test('assignWorkOrder requires hard eligibility and records human assignment', () => {
+  const order = { ...baseWorkOrder, assignedTeamId: undefined };
+  const assigned = assignWorkOrder(order, validTeam, 'admin-1', '2026-07-15T10:00:00.000Z');
+  assert.equal(assigned.assignedTeamId, 'team-2');
+  assert.equal(assigned.status, 'awaiting_acceptance');
+  assert.equal(assigned.assignmentHistory.at(-1)?.action, 'assigned');
+  assert.equal(assignWorkOrder(order, { ...validTeam, onDuty: false }, 'admin-1', '2026-07-15T10:00:00.000Z'), order);
+});
+
+test('reassignment requires a reason and records the reason in audit history', () => {
+  const reassigned = assignWorkOrder(baseWorkOrder, validTeam, 'admin-1', '2026-07-15T10:00:00.000Z');
+  assert.equal(reassigned, baseWorkOrder);
+  const withReason = assignWorkOrder(baseWorkOrder, validTeam, 'admin-1', '2026-07-15T10:00:00.000Z', '原隊伍無法出勤');
+  assert.equal(withReason.assignedTeamId, 'team-2');
+  assert.equal(withReason.assignmentHistory.at(-1)?.action, 'reassigned');
+  assert.equal(withReason.assignmentHistory.at(-1)?.reason, '原隊伍無法出勤');
 });

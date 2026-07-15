@@ -1,4 +1,4 @@
-import type { WorkOrder, WorkOrderStatus } from './types';
+import type { Team, WorkOrder, WorkOrderHistoryEntry, WorkOrderStatus } from './types';
 
 const NEXT: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
   draft: ['awaiting_acceptance', 'cancelled'],
@@ -33,6 +33,39 @@ export function isWorkOrderReady(order: WorkOrder, allOrders: WorkOrder[], now: 
 function withoutBlockerReason(order: WorkOrder): WorkOrder {
   const { blockerReason, ...orderWithoutBlockerReason } = order;
   return orderWithoutBlockerReason;
+}
+
+function teamCanTakeOrder(order: WorkOrder, team: Team): boolean {
+  return team.department === order.leadDepartment
+    && team.onDuty
+    && team.districts.includes(order.district)
+    && order.requiredCapabilities.every((item) => team.capabilities.includes(item))
+    && order.requiredEquipment.every((item) => team.equipment.includes(item));
+}
+
+export function assignWorkOrder(
+  order: WorkOrder,
+  team: Team,
+  actorUid: string,
+  at: string,
+  reason = '',
+): WorkOrder {
+  if (!teamCanTakeOrder(order, team)) return order;
+  const isReassignment = Boolean(order.assignedTeamId && order.assignedTeamId !== team.id);
+  if (isReassignment && !reason.trim()) return order;
+  const entry: WorkOrderHistoryEntry = {
+    at,
+    actorUid,
+    action: isReassignment ? 'reassigned' : 'assigned',
+    ...(reason.trim() ? { reason: reason.trim() } : {}),
+  };
+  return {
+    ...order,
+    assignedTeamId: team.id,
+    status: 'awaiting_acceptance',
+    updatedAt: at,
+    assignmentHistory: [...order.assignmentHistory, entry],
+  };
 }
 
 export function applyWorkOrderTransition(
