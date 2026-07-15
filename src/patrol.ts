@@ -51,19 +51,20 @@ function improveWithTwoOpt(start: Coordinates, items: Array<{ order: WorkOrder; 
   return best;
 }
 
-export function buildWorkOrderPatrolRoute(start: Coordinates, workOrders: WorkOrder[], reports: AdminReport[], options: PatrolOptions, department: DepartmentCode, actionDate: string): PatrolRouteDraft {
+export function buildWorkOrderPatrolRoute(start: Coordinates, workOrders: WorkOrder[], reports: AdminReport[], options: PatrolOptions, department: DepartmentCode, actionDate: string, planningAt?: string): PatrolRouteDraft {
   const compatibleMode = options.travelMode === 'clearance-vehicle' ? options.taskGroup === 'removal' : options.taskGroup === 'verification' || options.taskGroup === 'notice';
   if (!compatibleMode) return emptyRoute(start, options, department, actionDate);
-  const now = new Date(`${actionDate}T23:59:59.999Z`);
-  if (!Number.isFinite(now.getTime())) return emptyRoute(start, options, department, actionDate);
+  const parsedPlanningAt = planningAt ? Date.parse(planningAt) : Number.NaN;
+  const planningTime = Number.isFinite(parsedPlanningAt) ? new Date(parsedPlanningAt) : undefined;
+  const readinessTime = planningTime || new Date(0);
   const reportById = new Map(reports.map((report) => [report.id, report]));
   const maxStops = Math.min(8, Math.max(1, Math.floor(options.maxStops)));
   const eligible = workOrders
     .filter((order) => order.status === 'scheduled' && order.leadDepartment === department && order.scheduledAt?.slice(0, 10) === actionDate && TASK_GROUP[order.taskType] === options.taskGroup)
-    .filter((order) => isWorkOrderReady(order, workOrders, now))
+    .filter((order) => planningTime ? isWorkOrderReady(order, workOrders, planningTime) : !order.executableAfter && isWorkOrderReady(order, workOrders, readinessTime))
     .map((order) => ({ order, report: reportById.get(order.caseId) }))
     .filter((item): item is { order: WorkOrder; report: AdminReport } => Boolean(item.report) && Number.isFinite(item.report.lat) && Number.isFinite(item.report.lng) && item.report.coordinatesValid !== false)
-    .map((item) => ({ ...item, priorityScore: calculatePriorityScore(item.report, now) }))
+    .map((item) => ({ ...item, priorityScore: calculatePriorityScore(item.report, planningTime || readinessTime) }))
     .sort((a, b) => b.priorityScore - a.priorityScore || a.order.id.localeCompare(b.order.id))
     .slice(0, maxStops);
   const initial = nearestNeighbour(start, eligible);

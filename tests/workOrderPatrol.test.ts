@@ -25,7 +25,7 @@ test('route contains only the selected department, date and compatible task grou
     makeOrder('remove-fehd', 'case-b', 'removal', 'FEHD'),
     makeOrder('verify-had', 'case-a', 'site_verification', 'HAD'),
   ];
-  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, orders, reports, options, 'FEHD', '2026-07-15');
+  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, orders, reports, options, 'FEHD', '2026-07-15', '2026-07-15T08:00:00.000Z');
   assert.deepEqual(route.workOrderIds, ['verify-fehd']);
   assert.equal(route.taskGroup, 'verification');
 });
@@ -38,11 +38,23 @@ test('route excludes unscheduled, not-ready, invalid-coordinate and wrong-date w
     makeOrder('bad-time', 'case-a', 'site_verification', 'FEHD', { executableAfter: 'bad-date' }),
     makeOrder('wrong-date', 'case-a', 'site_verification', 'FEHD', { scheduledAt: '2026-07-16T09:00:00.000Z' }),
   ];
-  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, orders, reports, options, 'FEHD', '2026-07-15');
+  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, orders, reports, options, 'FEHD', '2026-07-15', '2026-07-15T08:00:00.000Z');
   assert.deepEqual(route.workOrderIds, ['scheduled']);
 });
 
+test('planning before a same-day executableAfter excludes the work order', () => {
+  const order = makeOrder('later-today', 'case-a', 'site_verification', 'FEHD', { executableAfter: '2026-07-15T15:00:00.000Z' });
+  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [order], reports, options, 'FEHD', '2026-07-15', '2026-07-15T09:00:00.000Z');
+  assert.deepEqual(route.workOrderIds, []);
+});
+
+test('missing or invalid planning time fails closed for executableAfter work', () => {
+  const order = makeOrder('needs-planning-time', 'case-a', 'site_verification', 'FEHD', { executableAfter: '2026-07-15T09:00:00.000Z' });
+  assert.deepEqual(buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [order], reports, options, 'FEHD', '2026-07-15').workOrderIds, []);
+  assert.deepEqual(buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [order], reports, options, 'FEHD', '2026-07-15', 'not-an-iso-time').workOrderIds, []);
+});
+
 test('clearance vehicle cannot mix with verification or notice tasks', () => {
-  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [makeOrder('remove', 'case-a', 'removal', 'FEHD')], reports, { ...options, travelMode: 'clearance-vehicle', taskGroup: 'verification' }, 'FEHD', '2026-07-15');
+  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [makeOrder('remove', 'case-a', 'removal', 'FEHD')], reports, { ...options, travelMode: 'clearance-vehicle', taskGroup: 'verification' }, 'FEHD', '2026-07-15', '2026-07-15T08:00:00.000Z');
   assert.deepEqual(route.workOrderIds, []);
 });

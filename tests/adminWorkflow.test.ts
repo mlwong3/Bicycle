@@ -16,7 +16,7 @@ test('classification and procedure confirmation do not create a patrol route', (
 });
 
 test('route confirmation updates only scheduled work orders and leaves case status unchanged', () => {
-  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [order], [report], { travelMode: 'inspection-walking', taskGroup: 'verification', maxStops: 5, serviceMinutesPerStop: 12 }, 'FEHD', '2026-07-15');
+  const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, [order], [report], { travelMode: 'inspection-walking', taskGroup: 'verification', maxStops: 5, serviceMinutesPerStop: 12 }, 'FEHD', '2026-07-15', '2026-07-15T08:00:00.000Z');
   const confirmed = applyWorkOrderRouteConfirmation([order], route, 'admin-demo', '2026-07-15T12:00:00.000Z', 'demo-route');
   assert.equal(confirmed[0].status, 'scheduled');
   assert.equal(confirmed[0].patrolRouteId, 'demo-route');
