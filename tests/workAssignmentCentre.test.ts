@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkOrderLockReason, getWorkOrderQueueLabel, getAssignmentConfirmationReason } from '../src/components/WorkAssignmentCentre';
+import { getWorkOrderLockReason, getWorkOrderQueueLabel, getAssignmentConfirmationReason, canShowReassignment } from '../src/components/WorkAssignmentCentre';
 import type { WorkOrder } from '../src/types';
 
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({
@@ -35,4 +35,15 @@ test('accepted work is schedulable and reassignment requires a nonblank reason',
   assert.equal(getWorkOrderQueueLabel(accepted.status), '已接收');
   assert.equal(getAssignmentConfirmationReason(accepted, 'team-new', '   '), '重新分配必須填寫理由');
   assert.equal(getAssignmentConfirmationReason(accepted, 'team-new', '改由支援隊處理'), undefined);
+});
+
+test('reassignment UI follows assignWorkOrder allowed statuses only', () => {
+  assert.deepEqual(
+    ['draft', 'awaiting_acceptance', 'declined', 'blocked'].map((status) => canShowReassignment(status as WorkOrder['status'])),
+    [true, true, true, true],
+  );
+  assert.deepEqual(
+    ['accepted', 'scheduled', 'in_progress', 'completed', 'cancelled'].map((status) => canShowReassignment(status as WorkOrder['status'])),
+    [false, false, false, false, false],
+  );
 });
