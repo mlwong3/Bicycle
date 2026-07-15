@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkOrderLockReason, getWorkOrderQueueLabel } from '../src/components/WorkAssignmentCentre';
+import { getWorkOrderLockReason, getWorkOrderQueueLabel, getAssignmentConfirmationReason } from '../src/components/WorkAssignmentCentre';
 import type { WorkOrder } from '../src/types';
 
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({
@@ -23,4 +23,16 @@ test('pure queue helper uses the required human-readable labels', () => {
   assert.equal(getWorkOrderQueueLabel('draft'), '待分配');
   assert.equal(getWorkOrderQueueLabel('awaiting_acceptance'), '待接收');
   assert.equal(getWorkOrderQueueLabel('in_progress'), '進行中');
+});
+
+test('malformed executableAfter is locked using the work-order readiness rule', () => {
+  const malformed = order({ assignedTeamId: 'team-fehd', executableAfter: 'not-a-date' });
+  assert.equal(getWorkOrderLockReason(malformed, [malformed], new Date('2026-07-15T01:00:00.000Z')), '可執行時間資料無效');
+});
+
+test('accepted work is schedulable and reassignment requires a nonblank reason', () => {
+  const accepted = order({ status: 'accepted', assignedTeamId: 'team-old' });
+  assert.equal(getWorkOrderQueueLabel(accepted.status), '已接收');
+  assert.equal(getAssignmentConfirmationReason(accepted, 'team-new', '   '), '重新分配必須填寫理由');
+  assert.equal(getAssignmentConfirmationReason(accepted, 'team-new', '改由支援隊處理'), undefined);
 });
