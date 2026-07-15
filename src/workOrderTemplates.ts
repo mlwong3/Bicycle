@@ -18,6 +18,8 @@ type TemplateStep = {
   prerequisites: readonly string[];
 };
 
+const DEMO_DISTRICTS = ['沙田', '大埔', '南區', '西貢', '屯門', '元朗', '葵青'] as const;
+
 const PUBLIC_PARKING_STEPS = [
   { key: 'suspension', taskType: 'suspension_notice', title: '發出暫停使用泊車處通知', leadDepartment: 'TD', prerequisites: [] },
   { key: 'closure', taskType: 'site_closure', title: '封閉泊車處或處理告示', leadDepartment: 'HKPF', prerequisites: ['suspension'] },
@@ -46,6 +48,22 @@ const EVIDENCE_LABELS: Partial<Record<WorkOrderTaskType, string>> = {
   custody_disposal: '接管及後續處置紀錄',
 };
 
+function deriveDistrict(location: string): string {
+  return DEMO_DISTRICTS.find((district) => location.includes(district)) ?? '未確認地區';
+}
+
+function resolvePrerequisiteIds(
+  templateId: ProcedureTemplateId,
+  step: TemplateStep,
+  ids: ReadonlyMap<string, string>,
+): string[] {
+  return step.prerequisites.map((key) => {
+    const id = ids.get(key);
+    if (!id) throw new Error(`Template ${templateId} references unknown prerequisite key: ${key}`);
+    return id;
+  });
+}
+
 export function createWorkOrdersFromTemplate(
   report: AdminReport,
   templateId: ProcedureTemplateId,
@@ -53,6 +71,7 @@ export function createWorkOrdersFromTemplate(
   jointOperationId?: string,
 ): WorkOrder[] {
   const steps = TEMPLATE_STEPS[templateId];
+  if (!steps) throw new Error(`Unknown procedure template: ${String(templateId)}`);
   const ids = new Map(steps.map((step) => [step.key, `${report.id}-${step.key}`]));
 
   return steps.map((step) => {
@@ -65,9 +84,10 @@ export function createWorkOrdersFromTemplate(
       title: step.title,
       leadDepartment: step.leadDepartment,
       supportingDepartments: [],
-      district: report.location,
+      location: report.location,
+      district: deriveDistrict(report.location),
       priority: report.urgency,
-      prerequisiteWorkOrderIds: step.prerequisites.map((key) => ids.get(key) as string),
+      prerequisiteWorkOrderIds: resolvePrerequisiteIds(templateId, step, ids),
       requiredCapabilities: [],
       requiredEquipment: [],
       evidenceChecklist: evidenceLabel ? [{ id: 'evidence', label: evidenceLabel, completed: false }] : [],

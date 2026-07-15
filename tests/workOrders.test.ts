@@ -11,6 +11,7 @@ const baseWorkOrder: WorkOrder = {
   leadDepartment: 'HAD',
   supportingDepartments: [],
   assignedTeamId: 'team-1',
+  location: '沙田源禾路體育館外',
   district: '沙田',
   executableAfter: '2026-07-15T09:30:00.000Z',
   priority: 'normal',

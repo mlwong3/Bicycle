@@ -75,6 +75,7 @@ export interface WorkOrder {
   supportingDepartments: DepartmentCode[];
   assignedTeamId?: string;
   assignedStaffUid?: string;
+  location: string;
   district: string;
   scheduledAt?: string;
   dueAt?: string;
