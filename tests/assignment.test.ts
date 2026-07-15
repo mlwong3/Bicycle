@@ -30,3 +30,29 @@ test('same inputs produce the same recommendation and explanation', () => {
   assert.deepEqual(first, second);
   assert.equal(first[0].reasons.includes('部門權責符合'), true);
 });
+
+test('emergency recommendation keeps only teams passing every hard filter', () => {
+  const emergencyOrder = { ...order, priority: 'emergency' as const };
+  const emergencyTeams: Team[] = [
+    { ...teams[0], id: 'not-on-duty', department: 'FEHD', onDuty: false },
+    { ...teams[0], id: 'wrong-district', department: 'FEHD', districts: ['大埔'] },
+    { ...teams[0], id: 'missing-capability', department: 'FEHD', capabilities: [] },
+    { ...teams[0], id: 'missing-equipment', department: 'FEHD', equipment: [] },
+    { ...teams[2], id: 'eligible-emergency' },
+  ];
+  const result = recommendTeams(emergencyOrder, emergencyTeams, new Date('2026-07-15T09:00:00.000Z'));
+  assert.deepEqual(result.map((item) => item.teamId), ['eligible-emergency']);
+  assert.equal(result[0].score, 1080);
+  assert.equal(result[0].score > 1000, true);
+});
+
+test('invalid dueAt uses the same neutral due score as no dueAt', () => {
+  const invalidDue = recommendTeams({ ...order, dueAt: 'not-a-date' }, [teams[1]], new Date('2026-07-15T09:00:00.000Z'));
+  const noDue = recommendTeams({ ...order, dueAt: undefined }, [teams[1]], new Date('2026-07-15T09:00:00.000Z'));
+  assert.equal(Number.isFinite(invalidDue[0]?.score), true);
+  assert.equal(invalidDue[0]?.score, noDue[0]?.score);
+});
+
+test('invalid now fails closed with no recommendations', () => {
+  assert.deepEqual(recommendTeams(order, teams, new Date('not-a-date')), []);
+});

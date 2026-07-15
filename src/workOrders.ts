@@ -13,6 +13,7 @@ const NEXT: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
 };
 
 const CANONICAL_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const ASSIGNABLE_STATUSES: readonly WorkOrderStatus[] = ['draft', 'awaiting_acceptance', 'declined', 'blocked'];
 
 export function canTransitionWorkOrder(from: WorkOrderStatus, to: WorkOrderStatus): boolean {
   return NEXT[from].includes(to);
@@ -50,6 +51,7 @@ export function assignWorkOrder(
   at: string,
   reason = '',
 ): WorkOrder {
+  if (!ASSIGNABLE_STATUSES.includes(order.status)) return order;
   if (!teamCanTakeOrder(order, team)) return order;
   const isReassignment = Boolean(order.assignedTeamId && order.assignedTeamId !== team.id);
   if (isReassignment && !reason.trim()) return order;

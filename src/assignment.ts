@@ -11,6 +11,10 @@ function includesAll(actual: string[], required: string[]): boolean {
 }
 
 export function recommendTeams(order: WorkOrder, teams: Team[], now: Date): TeamRecommendation[] {
+  const nowMs = now.getTime();
+  // Invalid reference time cannot support a meaningful deadline score; fail closed.
+  if (!Number.isFinite(nowMs)) return [];
+
   return teams
     .filter((team) => team.department === order.leadDepartment)
     .filter((team) => team.onDuty && team.districts.includes(order.district))
@@ -18,7 +22,9 @@ export function recommendTeams(order: WorkOrder, teams: Team[], now: Date): Team
     .filter((team) => includesAll(team.equipment, order.requiredEquipment))
     .map((team) => {
       const urgency = order.priority === 'emergency' ? 100 : order.priority === 'urgent' ? 75 : 50;
-      const daysUntilDue = order.dueAt ? Math.max(0, (Date.parse(order.dueAt) - now.getTime()) / 86400000) : 5;
+      const parsedDueAt = order.dueAt ? Date.parse(order.dueAt) : Number.NaN;
+      // Missing or invalid dueAt uses the neutral five-day assumption.
+      const daysUntilDue = Number.isFinite(parsedDueAt) ? Math.max(0, (parsedDueAt - nowMs) / 86400000) : 5;
       const due = Math.max(0, 100 - daysUntilDue * 10);
       const district = 100;
       const capability = 100;

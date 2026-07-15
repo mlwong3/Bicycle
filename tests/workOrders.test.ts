@@ -160,3 +160,13 @@ test('reassignment requires a reason and records the reason in audit history', (
   assert.equal(withReason.assignmentHistory.at(-1)?.action, 'reassigned');
   assert.equal(withReason.assignmentHistory.at(-1)?.reason, '原隊伍無法出勤');
 });
+
+test('completed work orders cannot be assigned again', () => {
+  const completed = { ...baseWorkOrder, status: 'completed' as const, assignedTeamId: undefined };
+  assert.equal(assignWorkOrder(completed, validTeam, 'admin-1', '2026-07-15T10:00:00.000Z'), completed);
+});
+
+test('cancelled work orders cannot be assigned again', () => {
+  const cancelled = { ...baseWorkOrder, status: 'cancelled' as const, assignedTeamId: undefined };
+  assert.equal(assignWorkOrder(cancelled, validTeam, 'admin-1', '2026-07-15T10:00:00.000Z'), cancelled);
+});
