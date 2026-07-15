@@ -117,6 +117,21 @@ export interface JointOperation {
   status: 'draft' | 'preparing' | 'ready' | 'in_progress' | 'completed' | 'postponed';
 }
 
+export interface DashboardFilters {
+  district: 'all' | string;
+  department: 'all' | DepartmentCode;
+  date: string;
+  status: 'all' | WorkOrderStatus;
+}
+
+export interface DepartmentLoad {
+  awaitingAcceptance: number;
+  scheduled: number;
+  inProgress: number;
+  blocked: number;
+  completedToday: number;
+}
+
 export interface StatusHistoryEntry {
   status: ReportStatus;
   at: string;
