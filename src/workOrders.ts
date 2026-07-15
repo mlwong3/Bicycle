@@ -17,8 +17,14 @@ export function canTransitionWorkOrder(from: WorkOrderStatus, to: WorkOrderStatu
 }
 
 export function isWorkOrderReady(order: WorkOrder, allOrders: WorkOrder[], now: Date): boolean {
-  if (order.executableAfter && Date.parse(order.executableAfter) > now.getTime()) return false;
+  const executableAfter = Date.parse(order.executableAfter ?? '');
+  if (!order.assignedTeamId || !Number.isFinite(executableAfter) || !Number.isFinite(now.getTime()) || executableAfter > now.getTime()) return false;
   return order.prerequisiteWorkOrderIds.every((id) => allOrders.find((item) => item.id === id)?.status === 'completed');
+}
+
+function withoutBlockerReason(order: WorkOrder): WorkOrder {
+  const { blockerReason, ...orderWithoutBlockerReason } = order;
+  return orderWithoutBlockerReason;
 }
 
 export function applyWorkOrderTransition(
@@ -26,18 +32,20 @@ export function applyWorkOrderTransition(
   nextStatus: WorkOrderStatus,
   actorUid: string,
   at: string,
-  reason = '',
+  reason: string,
+  allOrders: WorkOrder[],
+  now: Date,
 ): WorkOrder {
   if (!canTransitionWorkOrder(order.status, nextStatus)) return order;
+  if (nextStatus === 'in_progress' && !isWorkOrderReady(order, allOrders, now)) return order;
   if (nextStatus === 'completed' && order.evidenceChecklist.some((item) => !item.completed)) return order;
   if ((nextStatus === 'blocked' || nextStatus === 'declined') && !reason.trim()) return order;
 
   return {
-    ...order,
+    ...(nextStatus === 'blocked' ? order : withoutBlockerReason(order)),
     status: nextStatus,
     updatedAt: at,
     ...(nextStatus === 'blocked' ? { blockerReason: reason.trim() } : {}),
-    ...(!['blocked'].includes(nextStatus) ? { blockerReason: undefined } : {}),
     assignmentHistory: [...order.assignmentHistory, {
       at,
       actorUid,
