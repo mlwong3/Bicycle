@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkOrderLockReason, getWorkOrderQueueLabel, getAssignmentConfirmationReason, canShowReassignment } from '../src/components/WorkAssignmentCentre';
+import { getWorkOrderLockReason, getWorkOrderQueueLabel, getAssignmentConfirmationReason, canShowReassignment, isWorkOrderVisibleInQueue } from '../src/components/WorkAssignmentCentre';
 import type { WorkOrder } from '../src/types';
 
 const order = (overrides: Partial<WorkOrder> = {}): WorkOrder => ({
@@ -46,4 +46,10 @@ test('reassignment UI follows assignWorkOrder allowed statuses only', () => {
     ['accepted', 'scheduled', 'in_progress', 'completed', 'cancelled'].map((status) => canShowReassignment(status as WorkOrder['status'])),
     [false, false, false, false, false],
   );
+});
+
+test('declined work orders are visible in the 待分配 queue only', () => {
+  assert.equal(isWorkOrderVisibleInQueue('declined', 'draft'), true);
+  assert.equal(isWorkOrderVisibleInQueue('declined', 'awaiting_acceptance'), false);
+  assert.equal(isWorkOrderVisibleInQueue('declined', 'scheduled'), false);
 });

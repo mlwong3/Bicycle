@@ -19,6 +19,9 @@ const labels: Record<WorkOrderStatus, string> = {
 };
 
 export function getWorkOrderQueueLabel(status: WorkOrderStatus): string { return labels[status]; }
+export function isWorkOrderVisibleInQueue(status: WorkOrderStatus, queue: WorkOrderStatus): boolean {
+  return status === queue || (queue === 'draft' && status === 'declined') || (queue === 'scheduled' && status === 'accepted');
+}
 const REASSIGNABLE_STATUSES: readonly WorkOrderStatus[] = ['draft', 'awaiting_acceptance', 'declined', 'blocked'];
 export function canShowReassignment(status: WorkOrderStatus): boolean { return REASSIGNABLE_STATUSES.includes(status); }
 
@@ -41,7 +44,7 @@ export default function WorkAssignmentCentre({ workOrders, teams, onUpdateWorkOr
   const [queue, setQueue] = useState<WorkOrderStatus>('draft');
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [now] = useState(() => new Date());
-  const visible = workOrders.filter((order) => order.status === queue || (queue === 'scheduled' && order.status === 'accepted'));
+  const visible = workOrders.filter((order) => isWorkOrderVisibleInQueue(order.status, queue));
 
   const update = (order: WorkOrder, next: WorkOrderStatus) => {
     const updated = applyWorkOrderTransition(order, next, 'admin-demo', new Date().toISOString(), reasons[order.id] ?? '', workOrders, now);
@@ -64,7 +67,7 @@ export default function WorkAssignmentCentre({ workOrders, teams, onUpdateWorkOr
 
   return <section className="space-y-3" aria-label="工作分配中心">
     <div className="flex gap-2 overflow-x-auto">
-      {queues.map((status) => <button type="button" key={status} onClick={() => setQueue(status)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${queue === status ? 'bg-[#006b2c] text-white' : 'bg-zinc-100 text-zinc-600'}`}>{labels[status]} ({workOrders.filter((o) => o.status === status || (status === 'scheduled' && o.status === 'accepted')).length})</button>)}
+      {queues.map((status) => <button type="button" key={status} onClick={() => setQueue(status)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${queue === status ? 'bg-[#006b2c] text-white' : 'bg-zinc-100 text-zinc-600'}`}>{labels[status]} ({workOrders.filter((order) => isWorkOrderVisibleInQueue(order.status, status)).length})</button>)}
     </div>
     {visible.length === 0 ? <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">目前狀態沒有工作單。</div> : visible.map((order) => {
       const team = teams.find((item) => item.id === order.assignedTeamId);
