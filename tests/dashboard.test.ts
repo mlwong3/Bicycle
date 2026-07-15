@@ -79,3 +79,14 @@ test('joint-operation readiness follows the same filtered order set', () => {
   assert.equal(empty.summary.todayJointOperations, 0);
   assert.deepEqual(empty.operationReadiness, []);
 });
+
+test('today readiness checks complete orders excluded by the status filter', () => {
+  const prerequisite = { ...orders[0], id: 'completed-prerequisite', status: 'completed' as const };
+  const scheduled = {
+    ...orders[0], id: 'scheduled-dependent', prerequisiteWorkOrderIds: [prerequisite.id],
+  };
+  const view = buildDashboardView(reports, [prerequisite, scheduled], operations, {
+    district: '沙田', department: 'HKPF', date: '2026-07-15', status: 'scheduled',
+  }, new Date('2026-07-15T09:00:00.000Z'));
+  assert.deepEqual(view.todayExecutableWorkOrderIds, ['scheduled-dependent']);
+});

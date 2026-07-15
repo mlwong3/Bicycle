@@ -125,7 +125,7 @@ export function buildDashboardView(
 
   const todayExecutableWorkOrderIds = filteredOrders
     .filter((order) => order.status === 'scheduled' && dateMatches(order.scheduledAt, filters.date))
-    .filter((order) => isWorkOrderReady(order, filteredOrders, now))
+    .filter((order) => isWorkOrderReady(order, orders, now))
     .map((order) => order.id);
 
   const emergencyCaseIds = new Set(
