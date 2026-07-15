@@ -48,6 +48,12 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
   dismissed: 'bg-zinc-200 text-zinc-700',
 };
 
+const TEMPLATE_OPTIONS: Array<{ id: ProcedureTemplateId; label: string }> = [
+  { id: 'immediate_danger', label: '即時危險安全處理' },
+  { id: 'street_waste', label: '街道棄置物處理' },
+  { id: 'public_bike_parking_joint_operation', label: '公共單車泊車處聯合行動' },
+];
+
 export default function AdminTab({ reports, workOrders, jointOperations, teams, onPatchReport, onUpdateWorkOrder, onCreateTemplateWorkOrders, onConfirmPatrolRoute, onResetDemoReports, onNotify }: AdminTabProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => hasAdminSession());
   const [password, setPassword] = useState('');
@@ -55,12 +61,14 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
   const [note, setNote] = useState('');
   const [adminView, setAdminView] = useState<'dashboard' | 'cases'>('dashboard');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<ProcedureTemplateId>('immediate_danger');
 
   const visibleReports = useMemo(
     () => statusFilter === 'all' ? reports : reports.filter((report) => report.status === statusFilter),
     [reports, statusFilter],
   );
   const selectedReport = reports.find((report) => report.id === selectedId) || visibleReports[0] || reports[0];
+  const selectedReportWorkOrders = selectedReport ? workOrders.filter((order) => order.caseId === selectedReport.id) : [];
   const expectedPassword = import.meta.env.VITE_ADMIN_DEMO_PASSWORD || 'admin2026';
 
   const handleLogin = () => {
@@ -245,6 +253,22 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
                   onNotify('已確認本次示範程序。', 'success');
                 }}
               />
+
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-black text-zinc-900">建立程序工作單</h4>
+                  <p className="text-[11px] text-zinc-600 mt-1">由管理員選擇示範模板；建立後需在工作分配中心逐張確認。</p>
+                </div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <label className="text-[11px] font-bold text-zinc-600 flex-1 min-w-[220px]">程序模板
+                    <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value as ProcedureTemplateId)} disabled={selectedReportWorkOrders.length > 0} className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs">
+                      {TEMPLATE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" disabled={selectedReportWorkOrders.length > 0} onClick={() => { onCreateTemplateWorkOrders(selectedReport.id, selectedTemplateId); onNotify('已建立示範程序工作單，請在工作分配中心逐張確認。', 'success'); }} className="rounded-xl bg-[#006b2c] px-3 py-2 text-xs font-bold text-white disabled:bg-zinc-300 disabled:text-zinc-600">建立工作單</button>
+                </div>
+                {selectedReportWorkOrders.length > 0 && <p className="text-[11px] font-bold text-zinc-600">此案件已有 {selectedReportWorkOrders.length} 張工作單，為避免重複建立，模板選擇及按鈕已停用。</p>}
+              </section>
 
               {getAllowedNextStatuses(selectedReport.status).length > 0 && (
                 <div className="space-y-2">

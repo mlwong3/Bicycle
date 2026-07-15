@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createWorkOrdersFromTemplate } from '../src/workOrderTemplates';
 import { toAdminReport } from '../src/caseAdapter';
+import { recommendTeams } from '../src/assignment';
+import { DEMO_TEAMS } from '../src/demoData';
 
 test('public bicycle parking template creates six ordered department work orders', () => {
   const report = toAdminReport({
@@ -43,4 +45,17 @@ test('unknown procedure template fails closed with a clear error', () => {
     () => createWorkOrdersFromTemplate(report, 'unknown_template' as never, '2026-07-15T09:00:00.000Z'),
     /Unknown procedure template: unknown_template/,
   );
+});
+
+test('template removal requires bicycle-removal capability and removal-vehicle equipment', () => {
+  const report = toAdminReport({ id: 'case-removal', location: '大埔單車徑', description: '街道棄置物', status: 'classified', date: '2026-07-15', urgency: 'urgent' });
+  const removal = createWorkOrdersFromTemplate(report, 'street_waste', '2026-07-15T09:00:00.000Z')[1];
+  assert.deepEqual(removal.requiredCapabilities, ['bicycle-removal']);
+  assert.deepEqual(removal.requiredEquipment, ['removal-vehicle']);
+  const filtered = recommendTeams(removal, [
+    ...DEMO_TEAMS,
+    { ...DEMO_TEAMS.find((team) => team.department === 'FEHD')!, id: 'fehd-no-removal-equipment', equipment: ['camera'] },
+  ], new Date('2026-07-15T09:00:00.000Z'));
+  assert.equal(filtered.some((item) => item.teamId === 'fehd-no-removal-equipment'), false);
+  assert.equal(filtered.length > 0, true);
 });

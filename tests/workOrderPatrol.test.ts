@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildWorkOrderPatrolRoute } from '../src/patrol';
+import { buildWorkOrderPatrolRoute, getWorkOrderPatrolCandidates } from '../src/patrol';
 import type { AdminReport, WorkOrder } from '../src/types';
 
 const reports: AdminReport[] = [
@@ -27,6 +27,7 @@ test('route contains only the selected department, date and compatible task grou
   ];
   const route = buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, orders, reports, options, 'FEHD', '2026-07-15', '2026-07-15T08:00:00.000Z');
   assert.deepEqual(route.workOrderIds, ['verify-fehd']);
+  assert.deepEqual(getWorkOrderPatrolCandidates(orders, reports, options, 'FEHD', '2026-07-15', '2026-07-15T08:00:00.000Z').map((order) => order.id), ['verify-fehd']);
   assert.equal(route.taskGroup, 'verification');
 });
 

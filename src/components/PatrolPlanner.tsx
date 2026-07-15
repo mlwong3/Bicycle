@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { buildWorkOrderPatrolRoute } from '../patrol';
+import { buildWorkOrderPatrolRoute, getWorkOrderPatrolCandidates } from '../patrol';
 import type { AdminReport, DepartmentCode, PatrolOptions, PatrolRouteDraft, WorkOrder } from '../types';
 
 interface PatrolPlannerProps { reports: AdminReport[]; workOrders: WorkOrder[]; onConfirm: (route: PatrolRouteDraft) => void; }
@@ -12,10 +12,10 @@ export default function PatrolPlanner({ reports, workOrders, onConfirm }: Patrol
   const [actionDate, setActionDate] = useState(defaultDate);
   const [taskGroup, setTaskGroup] = useState<PatrolOptions['taskGroup']>('verification');
   const [travelMode, setTravelMode] = useState<PatrolOptions['travelMode']>('inspection-walking');
-  const [maxStops, setMaxStops] = useState(5);
   const [planningAt, setPlanningAt] = useState(() => new Date().toISOString());
+  const [maxStops, setMaxStops] = useState(5);
   const [route, setRoute] = useState<PatrolRouteDraft | null>(null);
-  const eligibleCount = useMemo(() => workOrders.filter((order) => order.status === 'scheduled' && order.leadDepartment === department && order.scheduledAt?.slice(0, 10) === actionDate).length, [workOrders, department, actionDate]);
+  const eligibleCount = useMemo(() => getWorkOrderPatrolCandidates(workOrders, reports, { travelMode, taskGroup, maxStops, serviceMinutesPerStop: 12 }, department, actionDate, planningAt || undefined).length, [workOrders, reports, travelMode, taskGroup, maxStops, department, actionDate, planningAt]);
   const generate = () => setRoute(buildWorkOrderPatrolRoute({ lat: 22.38, lng: 114.18 }, workOrders, reports, { travelMode, taskGroup, maxStops, serviceMinutesPerStop: 12, routeSource: 'straight-line-estimate' }, department, actionDate, planningAt || undefined));
   return <section className="bg-white border border-zinc-200 rounded-2xl p-4 space-y-4">
     <div><div className="flex items-center gap-2"><h3 className="text-base font-black text-zinc-900">已排期工作單巡邏路線</h3><span className="text-[10px] rounded-full bg-amber-100 text-amber-800 px-2 py-1 font-bold">Prototype Simulation</span></div><p className="text-[11px] text-zinc-500 mt-1">只納入已排期、結構準備完成及有有效案件座標的工作單，目前候選 {eligibleCount} 張。</p></div>
