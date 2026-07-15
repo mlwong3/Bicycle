@@ -4,6 +4,8 @@ export const STORAGE_KEYS = {
   onboardingDone: `hk_bike:${VERSION}:onboarding_done`,
   bikes: `hk_bike:${VERSION}:registered_list`,
   reports: `hk_bike:${VERSION}:reports_history`,
+  workOrders: `hk_bike:${VERSION}:work_orders`,
+  jointOperations: `hk_bike:${VERSION}:joint_operations`,
   savedParkingIds: `hk_bike:${VERSION}:saved_parking_spots`,
   userScore: `hk_bike:${VERSION}:user_green_score`,
   totalDistanceKm: `hk_bike:${VERSION}:total_distance_km`,
@@ -95,4 +97,3 @@ export function clearAppStorage(): void {
     // Keep reset functional even when storage is unavailable.
   }
 }
-

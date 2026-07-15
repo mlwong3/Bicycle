@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AdminReport, Bike, Report, PatrolRouteDraft } from './types';
+import { AdminReport, Bike, JointOperation, Report, PatrolRouteDraft, WorkOrder } from './types';
 import { INITIAL_BIKES, INITIAL_REPORTS } from './data';
+import { INITIAL_JOINT_OPERATIONS, INITIAL_WORK_ORDERS } from './demoData';
 
 import Onboarding from './components/Onboarding';
 import MapTab from './components/MapTab';
@@ -18,6 +19,7 @@ import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStat
 import { applyAdminPatch, applyPatrolConfirmation, toAdminReport } from './caseAdapter';
 import { getStatusLabel } from './reportStatus';
 import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
+import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
 interface Notice {
@@ -45,6 +47,14 @@ export default function App() {
 
   const [reports, setReports] = useState<Report[]>(() => {
     return readStoredJson(STORAGE_KEYS.reports, INITIAL_REPORTS, ['hk_bike_reports_history']);
+  });
+
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(() => {
+    return readStoredJson(STORAGE_KEYS.workOrders, INITIAL_WORK_ORDERS);
+  });
+
+  const [jointOperations, setJointOperations] = useState<JointOperation[]>(() => {
+    return readStoredJson(STORAGE_KEYS.jointOperations, INITIAL_JOINT_OPERATIONS);
   });
 
   const [savedParkingIds, setSavedParkingIds] = useState<string[]>(() => {
@@ -91,6 +101,14 @@ export default function App() {
   useEffect(() => {
     writeStoredJson(STORAGE_KEYS.reports, reports);
   }, [reports]);
+
+  useEffect(() => {
+    writeStoredJson(STORAGE_KEYS.workOrders, workOrders);
+  }, [workOrders]);
+
+  useEffect(() => {
+    writeStoredJson(STORAGE_KEYS.jointOperations, jointOperations);
+  }, [jointOperations]);
 
   useEffect(() => {
     writeStoredJson(STORAGE_KEYS.savedParkingIds, savedParkingIds);
@@ -182,8 +200,29 @@ export default function App() {
     showNotice('巡查次序已確認，案件已進入示範排程。', 'success');
   };
 
+  const handleUpdateWorkOrder = (next: WorkOrder) => {
+    setWorkOrders((previous) => previous.map((order) => order.id === next.id ? next : order));
+  };
+
+  const handleCreateTemplateWorkOrders = (reportId: string, templateId: ProcedureTemplateId) => {
+    const report = reports.find((item) => item.id === reportId);
+    if (!report) return;
+    const created = createWorkOrdersFromTemplate(
+      toAdminReport(report),
+      templateId,
+      new Date().toISOString(),
+    );
+    setWorkOrders((previous) => {
+      const existingIds = new Set(previous.map((order) => order.id));
+      const additions = created.filter((order) => !existingIds.has(order.id));
+      return additions.length > 0 ? [...previous, ...additions] : previous;
+    });
+  };
+
   const handleResetDemoReports = () => {
     setReports(INITIAL_REPORTS);
+    setWorkOrders(INITIAL_WORK_ORDERS);
+    setJointOperations(INITIAL_JOINT_OPERATIONS);
   };
 
   const toggleSaveParking = (id: string) => {
@@ -201,6 +240,8 @@ export default function App() {
     setHasCompletedOnboarding(false);
     setBikes(INITIAL_BIKES);
     setReports(INITIAL_REPORTS);
+    setWorkOrders(INITIAL_WORK_ORDERS);
+    setJointOperations(INITIAL_JOINT_OPERATIONS);
     setSavedParkingIds(['parking-1']);
     setUserScore(450);
     setTotalDistanceKm(0);
