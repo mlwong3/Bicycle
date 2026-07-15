@@ -98,7 +98,7 @@ git diff --check
 ### 修正內容
 
 - `scheduled → in_progress` 現在必須傳入完整工作單清單及當前時間；只有已指派團隊、所有前置工作單均為 `completed`，以及 `executableAfter` 為有效且已到達的日期時，才可轉為 `in_progress`。
-- `isWorkOrderReady()` 對缺少或無效的 `executableAfter`、無效的 `now`、未指派團隊及未完成前置工作單，一律回傳 `false`。
+- `isWorkOrderReady()` 對無效的 `executableAfter`、無效的 `now`、未指派團隊及未完成前置工作單，一律回傳 `false`；缺少 `executableAfter` 仍屬有效。
 - 非 `blocked` 狀態轉換會移除既有 `blockerReason` 屬性，而不再序列化為 `blockerReason: undefined`。
 - 未新增能力、授權或設備評分／配對邏輯；該等篩選維持為 Task 3 的範圍。
 
@@ -137,3 +137,34 @@ git diff --check
 - 全套測試：37/37 通過。
 - TypeScript lint：`tsc --noEmit` 通過，0 errors。
 - 差異格式檢查：通過。
+
+## 8. 最終 Review 修正：嚴格驗證 `executableAfter`（2026-07-15）
+
+### RED
+
+先加入回歸測試：已指派且狀態為 `scheduled` 的工作單，如
+`executableAfter = 2026-02-30T09:30:00.000Z`，即使當前時間已在 JavaScript
+正規化後的日期之後，也不得轉為 `in_progress`。
+
+執行：
+
+```bash
+node --import tsx --test tests/workOrders.test.ts
+```
+
+結果：8 項測試中 7 項通過、1 項失敗；新測試顯示現有 `Date.parse` 邏輯錯誤地把工作單轉為 `in_progress`。
+
+### GREEN
+
+加入最小嚴格驗證：`executableAfter` 如有提供，必須符合
+`YYYY-MM-DDTHH:mm:ss.sssZ`，並且 `new Date(raw).toISOString() === raw`；缺少
+`executableAfter` 仍屬有效。日曆無效、格式錯誤或非 canonical 的值一律 fail closed。
+
+再次執行聚焦測試，結果為 8/8 通過。
+
+### 最終驗證
+
+- `npm test`：38/38 通過。
+- `npm run lint`：`tsc --noEmit` 通過，0 errors。
+- `git diff --check`：通過。
+- 變更只限於 Task 1 工作單驗證及其回歸測試；沒有修改 Task 3 範圍。

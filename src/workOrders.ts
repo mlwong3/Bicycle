@@ -12,13 +12,21 @@ const NEXT: Record<WorkOrderStatus, readonly WorkOrderStatus[]> = {
   cancelled: [],
 };
 
+const CANONICAL_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 export function canTransitionWorkOrder(from: WorkOrderStatus, to: WorkOrderStatus): boolean {
   return NEXT[from].includes(to);
 }
 
 export function isWorkOrderReady(order: WorkOrder, allOrders: WorkOrder[], now: Date): boolean {
-  const executableAfter = Date.parse(order.executableAfter ?? '');
-  if (!order.assignedTeamId || !Number.isFinite(executableAfter) || !Number.isFinite(now.getTime()) || executableAfter > now.getTime()) return false;
+  let executableAfter: number | undefined;
+  if (order.executableAfter !== undefined) {
+    if (!CANONICAL_UTC_TIMESTAMP.test(order.executableAfter)) return false;
+    const parsedExecutableAfter = new Date(order.executableAfter);
+    if (!Number.isFinite(parsedExecutableAfter.getTime()) || parsedExecutableAfter.toISOString() !== order.executableAfter) return false;
+    executableAfter = parsedExecutableAfter.getTime();
+  }
+  if (!order.assignedTeamId || !Number.isFinite(now.getTime()) || (executableAfter !== undefined && executableAfter > now.getTime())) return false;
   return order.prerequisiteWorkOrderIds.every((id) => allOrders.find((item) => item.id === id)?.status === 'completed');
 }
 

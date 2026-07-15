@@ -109,6 +109,24 @@ test('scheduled work cannot start when executableAfter is invalid', () => {
   assert.equal(transitioned.status, 'scheduled');
 });
 
+test('scheduled work cannot start after a calendar-invalid executableAfter is normalized', () => {
+  const scheduled = {
+    ...baseWorkOrder,
+    status: 'scheduled' as const,
+    executableAfter: '2026-02-30T09:30:00.000Z',
+  };
+  const transitioned = applyWorkOrderTransition(
+    scheduled,
+    'in_progress',
+    'staff-1',
+    '2026-03-03T10:00:00.000Z',
+    '',
+    [scheduled],
+    new Date('2026-03-03T10:00:00.000Z'),
+  );
+  assert.equal(transitioned.status, 'scheduled');
+});
+
 test('completion requires every evidence item and records an audit entry', () => {
   const started = { ...baseWorkOrder, status: 'in_progress' as const };
   assert.equal(applyWorkOrderTransition(started, 'completed', 'staff-1', '2026-07-15T10:00:00.000Z', '', [started], new Date('2026-07-15T10:00:00.000Z')).status, 'in_progress');
