@@ -25,6 +25,97 @@ export type CaseType =
 
 export type Urgency = 'emergency' | 'urgent' | 'normal';
 
+export type DepartmentCode = 'HAD' | 'TD' | 'LandsD' | 'FEHD' | 'HKPF';
+
+export type WorkOrderTaskType =
+  | 'jurisdiction_review'
+  | 'safety_response'
+  | 'site_verification'
+  | 'suspension_notice'
+  | 'site_closure'
+  | 'statutory_notice'
+  | 'removal'
+  | 'custody_disposal'
+  | 'coordination_closeout';
+
+export type WorkOrderStatus =
+  | 'draft'
+  | 'awaiting_acceptance'
+  | 'accepted'
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'blocked'
+  | 'declined'
+  | 'cancelled';
+
+export interface EvidenceChecklistItem {
+  id: string;
+  label: string;
+  completed: boolean;
+  note?: string;
+}
+
+export interface WorkOrderHistoryEntry {
+  at: string;
+  actorUid: string;
+  action: 'created' | 'assigned' | 'accepted' | 'declined' | 'status_changed' | 'blocked' | 'reassigned' | 'route_assigned';
+  fromStatus?: WorkOrderStatus;
+  toStatus?: WorkOrderStatus;
+  reason?: string;
+}
+
+export interface WorkOrder {
+  id: string;
+  caseId: string;
+  jointOperationId?: string;
+  taskType: WorkOrderTaskType;
+  title: string;
+  leadDepartment: DepartmentCode;
+  supportingDepartments: DepartmentCode[];
+  assignedTeamId?: string;
+  assignedStaffUid?: string;
+  district: string;
+  scheduledAt?: string;
+  dueAt?: string;
+  executableAfter?: string;
+  priority: Urgency;
+  prerequisiteWorkOrderIds: string[];
+  requiredCapabilities: string[];
+  requiredEquipment: string[];
+  evidenceChecklist: EvidenceChecklistItem[];
+  status: WorkOrderStatus;
+  blockerReason?: string;
+  patrolRouteId?: string;
+  assignmentHistory: WorkOrderHistoryEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  department: DepartmentCode;
+  districts: string[];
+  capabilities: string[];
+  equipment: string[];
+  onDuty: boolean;
+  dailyCapacity: number;
+  activeWorkload: number;
+}
+
+export interface JointOperation {
+  id: string;
+  title: string;
+  location: string;
+  district: string;
+  actionDate: string;
+  coordinatingDepartment: DepartmentCode;
+  participatingDepartments: DepartmentCode[];
+  mandatoryWorkOrderIds: string[];
+  status: 'draft' | 'preparing' | 'ready' | 'in_progress' | 'completed' | 'postponed';
+}
+
 export interface StatusHistoryEntry {
   status: ReportStatus;
   at: string;
