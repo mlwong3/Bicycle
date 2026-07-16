@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applyAdminPatch, toAdminReport, toPublicReport } from '../src/caseAdapter';
-import { INITIAL_ADMIN_REPORTS } from '../src/demoData';
+import { DEMO_TEAMS, INITIAL_ADMIN_REPORTS, INITIAL_JOINT_OPERATIONS, INITIAL_WORK_ORDERS } from '../src/demoData';
 
 test('legacy report is adapted with safe internal defaults', () => {
   const admin = toAdminReport({
@@ -29,8 +29,17 @@ test('admin patch preserves existing data and does not change status implicitly'
 });
 
 test('demo data covers six distinct workflow situations', () => {
-  assert.equal(INITIAL_ADMIN_REPORTS.length, 6);
+  assert.equal(INITIAL_ADMIN_REPORTS.length >= 6, true);
   assert.equal(INITIAL_ADMIN_REPORTS.every((report) => report.demoMode === true), true);
   assert.equal(INITIAL_ADMIN_REPORTS.some((report) => report.status === 'clearance_approved'), true);
   assert.equal(INITIAL_ADMIN_REPORTS.some((report) => report.isDuplicate), true);
+});
+
+test('phase 1 demo data covers five departments, ten teams and a six-step joint operation', () => {
+  assert.equal(new Set(DEMO_TEAMS.map((team) => team.department)).size, 5);
+  assert.equal(DEMO_TEAMS.length, 10);
+  assert.equal(INITIAL_JOINT_OPERATIONS.length >= 1, true);
+  const operation = INITIAL_JOINT_OPERATIONS[0];
+  assert.equal(operation.mandatoryWorkOrderIds.length, 6);
+  assert.equal(operation.mandatoryWorkOrderIds.every((id) => INITIAL_WORK_ORDERS.some((order) => order.id === id)), true);
 });

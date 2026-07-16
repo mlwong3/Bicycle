@@ -25,6 +25,113 @@ export type CaseType =
 
 export type Urgency = 'emergency' | 'urgent' | 'normal';
 
+export type DepartmentCode = 'HAD' | 'TD' | 'LandsD' | 'FEHD' | 'HKPF';
+
+export type WorkOrderTaskType =
+  | 'jurisdiction_review'
+  | 'safety_response'
+  | 'site_verification'
+  | 'suspension_notice'
+  | 'site_closure'
+  | 'statutory_notice'
+  | 'removal'
+  | 'custody_disposal'
+  | 'coordination_closeout';
+
+export type WorkOrderStatus =
+  | 'draft'
+  | 'awaiting_acceptance'
+  | 'accepted'
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'blocked'
+  | 'declined'
+  | 'cancelled';
+
+export interface EvidenceChecklistItem {
+  id: string;
+  label: string;
+  completed: boolean;
+  note?: string;
+}
+
+export interface WorkOrderHistoryEntry {
+  at: string;
+  actorUid: string;
+  action: 'created' | 'assigned' | 'accepted' | 'declined' | 'status_changed' | 'blocked' | 'reassigned' | 'route_assigned';
+  fromStatus?: WorkOrderStatus;
+  toStatus?: WorkOrderStatus;
+  reason?: string;
+}
+
+export interface WorkOrder {
+  id: string;
+  caseId: string;
+  jointOperationId?: string;
+  taskType: WorkOrderTaskType;
+  title: string;
+  leadDepartment: DepartmentCode;
+  supportingDepartments: DepartmentCode[];
+  assignedTeamId?: string;
+  assignedStaffUid?: string;
+  location: string;
+  district: string;
+  scheduledAt?: string;
+  dueAt?: string;
+  executableAfter?: string;
+  priority: Urgency;
+  prerequisiteWorkOrderIds: string[];
+  requiredCapabilities: string[];
+  requiredEquipment: string[];
+  evidenceChecklist: EvidenceChecklistItem[];
+  status: WorkOrderStatus;
+  blockerReason?: string;
+  patrolRouteId?: string;
+  assignmentHistory: WorkOrderHistoryEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  department: DepartmentCode;
+  districts: string[];
+  capabilities: string[];
+  equipment: string[];
+  onDuty: boolean;
+  dailyCapacity: number;
+  activeWorkload: number;
+}
+
+export interface JointOperation {
+  id: string;
+  title: string;
+  location: string;
+  district: string;
+  actionDate: string;
+  coordinatingDepartment: DepartmentCode;
+  participatingDepartments: DepartmentCode[];
+  mandatoryWorkOrderIds: string[];
+  status: 'draft' | 'preparing' | 'ready' | 'in_progress' | 'completed' | 'postponed';
+}
+
+export interface DashboardFilters {
+  district: 'all' | string;
+  department: 'all' | DepartmentCode;
+  date: string;
+  status: 'all' | WorkOrderStatus;
+}
+
+export interface DepartmentLoad {
+  awaitingAcceptance: number;
+  scheduled: number;
+  inProgress: number;
+  blocked: number;
+  completedToday: number;
+}
+
 export interface StatusHistoryEntry {
   status: ReportStatus;
   at: string;
@@ -125,22 +232,28 @@ export interface Coordinates {
 }
 
 export type PatrolTravelMode = 'inspection-walking' | 'inspection-driving' | 'clearance-vehicle';
+export type PatrolTaskGroup = 'verification' | 'notice' | 'removal';
 
 export interface PatrolOptions {
   travelMode: PatrolTravelMode;
+  taskGroup: PatrolTaskGroup;
   maxStops: number;
   serviceMinutesPerStop: number;
   routeSource?: 'mapbox' | 'leaflet-estimate' | 'straight-line-estimate';
 }
 
 export interface PatrolRouteDraft {
-  reportIds: string[];
+  workOrderIds: string[];
   orderedStops: Array<{
-    reportId: string;
+    workOrderId: string;
+    caseId: string;
     order: number;
     priorityScore: number;
     estimatedServiceMinutes: number;
   }>;
+  department: DepartmentCode;
+  actionDate: string;
+  taskGroup: PatrolTaskGroup;
   startPoint: Coordinates;
   travelMode: PatrolTravelMode;
   estimatedDistanceKm: number;

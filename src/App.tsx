@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AdminReport, Bike, Report, PatrolRouteDraft } from './types';
+import { AdminReport, Bike, JointOperation, Report, PatrolRouteDraft, WorkOrder } from './types';
 import { INITIAL_BIKES, INITIAL_REPORTS } from './data';
+import { DEMO_TEAMS, INITIAL_JOINT_OPERATIONS, INITIAL_WORK_ORDERS } from './demoData';
 
 import Onboarding from './components/Onboarding';
 import MapTab from './components/MapTab';
@@ -15,9 +16,11 @@ import AdminTab from './components/AdminTab';
 import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
 import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
 import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStatus, syncTrip, uploadReportImage } from './backend';
-import { applyAdminPatch, applyPatrolConfirmation, toAdminReport } from './caseAdapter';
+import { applyAdminPatch, toAdminReport } from './caseAdapter';
 import { getStatusLabel } from './reportStatus';
 import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
+import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
+import { applyWorkOrderRouteConfirmation } from './workOrders';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
 interface Notice {
@@ -45,6 +48,14 @@ export default function App() {
 
   const [reports, setReports] = useState<Report[]>(() => {
     return readStoredJson(STORAGE_KEYS.reports, INITIAL_REPORTS, ['hk_bike_reports_history']);
+  });
+
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(() => {
+    return readStoredJson(STORAGE_KEYS.workOrders, INITIAL_WORK_ORDERS);
+  });
+
+  const [jointOperations, setJointOperations] = useState<JointOperation[]>(() => {
+    return readStoredJson(STORAGE_KEYS.jointOperations, INITIAL_JOINT_OPERATIONS);
   });
 
   const [savedParkingIds, setSavedParkingIds] = useState<string[]>(() => {
@@ -91,6 +102,14 @@ export default function App() {
   useEffect(() => {
     writeStoredJson(STORAGE_KEYS.reports, reports);
   }, [reports]);
+
+  useEffect(() => {
+    writeStoredJson(STORAGE_KEYS.workOrders, workOrders);
+  }, [workOrders]);
+
+  useEffect(() => {
+    writeStoredJson(STORAGE_KEYS.jointOperations, jointOperations);
+  }, [jointOperations]);
 
   useEffect(() => {
     writeStoredJson(STORAGE_KEYS.savedParkingIds, savedParkingIds);
@@ -175,15 +194,34 @@ export default function App() {
 
   const handleConfirmPatrolRoute = (route: PatrolRouteDraft) => {
     const at = new Date().toISOString();
-    const currentAdminReports = reports.map(toAdminReport);
-    const updatedAdminReports = applyPatrolConfirmation(currentAdminReports, route, 'admin-demo', at, `demo-route-${Date.now()}`);
-    setReports((prev) => prev.map((report) => updatedAdminReports.find((item) => item.id === report.id) || report));
-    updatedAdminReports.filter((report) => route.reportIds.includes(report.id)).forEach((report) => { void syncReportStatus(report); });
-    showNotice('巡查次序已確認，案件已進入示範排程。', 'success');
+    const routeId = `demo-route-${Date.now()}`;
+    setWorkOrders((previous) => applyWorkOrderRouteConfirmation(previous, route, 'admin-demo', at, routeId));
+    showNotice('巡邏路線已確認，已記錄於工作單；案件狀態不會自動變更。', 'success');
+  };
+
+  const handleUpdateWorkOrder = (next: WorkOrder) => {
+    setWorkOrders((previous) => previous.map((order) => order.id === next.id ? next : order));
+  };
+
+  const handleCreateTemplateWorkOrders = (reportId: string, templateId: ProcedureTemplateId) => {
+    const report = reports.find((item) => item.id === reportId);
+    if (!report) return;
+    const created = createWorkOrdersFromTemplate(
+      toAdminReport(report),
+      templateId,
+      new Date().toISOString(),
+    );
+    setWorkOrders((previous) => {
+      const existingIds = new Set(previous.map((order) => order.id));
+      const additions = created.filter((order) => !existingIds.has(order.id));
+      return additions.length > 0 ? [...previous, ...additions] : previous;
+    });
   };
 
   const handleResetDemoReports = () => {
     setReports(INITIAL_REPORTS);
+    setWorkOrders(INITIAL_WORK_ORDERS);
+    setJointOperations(INITIAL_JOINT_OPERATIONS);
   };
 
   const toggleSaveParking = (id: string) => {
@@ -201,6 +239,8 @@ export default function App() {
     setHasCompletedOnboarding(false);
     setBikes(INITIAL_BIKES);
     setReports(INITIAL_REPORTS);
+    setWorkOrders(INITIAL_WORK_ORDERS);
+    setJointOperations(INITIAL_JOINT_OPERATIONS);
     setSavedParkingIds(['parking-1']);
     setUserScore(450);
     setTotalDistanceKm(0);
@@ -372,7 +412,12 @@ export default function App() {
               {currentTab === 'admin' && (
                 <AdminTab
                   reports={adminReports}
+                  workOrders={workOrders}
+                  jointOperations={jointOperations}
+                  teams={DEMO_TEAMS}
                   onPatchReport={handlePatchAdminReport}
+                  onUpdateWorkOrder={handleUpdateWorkOrder}
+                  onCreateTemplateWorkOrders={handleCreateTemplateWorkOrders}
                   onConfirmPatrolRoute={handleConfirmPatrolRoute}
                   onResetDemoReports={handleResetDemoReports}
                   onNotify={showNotice}

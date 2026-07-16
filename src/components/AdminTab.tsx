@@ -10,7 +10,10 @@ import {
   type ReportStatus,
 } from '../admin';
 import { recordAdminDemoLogin } from '../backend';
-import type { AdminReport, AiCaseClassification, ManualRubric, PatrolRouteDraft, ProcedureConfig } from '../types';
+import type { AdminReport, AiCaseClassification, JointOperation, ManualRubric, PatrolRouteDraft, ProcedureConfig, Team, WorkOrder } from '../types';
+import type { ProcedureTemplateId } from '../workOrderTemplates';
+import CoordinationDashboard from './CoordinationDashboard';
+import WorkAssignmentCentre from './WorkAssignmentCentre';
 import ManualRubricForm from './ManualRubricForm';
 import ProcedureConfigPanel from './ProcedureConfigPanel';
 import CaseClassificationPanel from './CaseClassificationPanel';
@@ -18,7 +21,12 @@ import PatrolPlanner from './PatrolPlanner';
 
 interface AdminTabProps {
   reports: AdminReport[];
+  workOrders: WorkOrder[];
+  jointOperations: JointOperation[];
+  teams: Team[];
   onPatchReport: (reportId: string, patch: Partial<AdminReport>, note?: string) => void;
+  onUpdateWorkOrder: (next: WorkOrder) => void;
+  onCreateTemplateWorkOrders: (reportId: string, templateId: ProcedureTemplateId) => void;
   onConfirmPatrolRoute: (route: PatrolRouteDraft) => void;
   onResetDemoReports: () => void;
   onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
@@ -40,18 +48,27 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
   dismissed: 'bg-zinc-200 text-zinc-700',
 };
 
-export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute, onResetDemoReports, onNotify }: AdminTabProps) {
+const TEMPLATE_OPTIONS: Array<{ id: ProcedureTemplateId; label: string }> = [
+  { id: 'immediate_danger', label: '即時危險安全處理' },
+  { id: 'street_waste', label: '街道棄置物處理' },
+  { id: 'public_bike_parking_joint_operation', label: '公共單車泊車處聯合行動' },
+];
+
+export default function AdminTab({ reports, workOrders, jointOperations, teams, onPatchReport, onUpdateWorkOrder, onCreateTemplateWorkOrders, onConfirmPatrolRoute, onResetDemoReports, onNotify }: AdminTabProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => hasAdminSession());
   const [password, setPassword] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(reports[0]?.id || null);
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
   const [note, setNote] = useState('');
+  const [adminView, setAdminView] = useState<'dashboard' | 'cases'>('dashboard');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<ProcedureTemplateId>('immediate_danger');
 
   const visibleReports = useMemo(
     () => statusFilter === 'all' ? reports : reports.filter((report) => report.status === statusFilter),
     [reports, statusFilter],
   );
   const selectedReport = reports.find((report) => report.id === selectedId) || visibleReports[0] || reports[0];
+  const selectedReportWorkOrders = selectedReport ? workOrders.filter((order) => order.caseId === selectedReport.id) : [];
   const expectedPassword = import.meta.env.VITE_ADMIN_DEMO_PASSWORD || 'admin2026';
 
   const handleLogin = () => {
@@ -113,12 +130,14 @@ export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute,
       <header className="flex flex-wrap gap-3 items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-black text-zinc-900">案件管理工作台</h2>
+            <h2 className="text-xl font-black text-zinc-900">{adminView === 'dashboard' ? '跨部門統籌儀表板' : '案件與工作分配'}</h2>
             <span className="rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-1">示範模式</span>
           </div>
           <p className="text-xs text-zinc-500 mt-1">案件處理流程模擬；最終判斷仍由人員作出。</p>
         </div>
         <div className="flex gap-2">
+          <button type="button" onClick={() => setAdminView('dashboard')} className={`rounded-xl px-3 py-2 text-xs font-bold ${adminView === 'dashboard' ? 'bg-[#006b2c] text-white' : 'border border-zinc-200 text-zinc-600'}`}>統籌儀表板</button>
+          <button type="button" onClick={() => setAdminView('cases')} className={`rounded-xl px-3 py-2 text-xs font-bold ${adminView === 'cases' ? 'bg-[#006b2c] text-white' : 'border border-zinc-200 text-zinc-600'}`}>案件與工作分配</button>
           <button
             type="button"
             onClick={() => { onResetDemoReports(); setSelectedId(null); onNotify('示範案件已重設。', 'success'); }}
@@ -136,19 +155,7 @@ export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute,
         </div>
       </header>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          ['全部案件', reports.length, 'text-zinc-900'],
-          ['待處理', reports.filter((report) => !['resolved', 'dismissed', 'duplicate'].includes(report.status)).length, 'text-amber-700'],
-          ['已完成處理', reports.filter((report) => report.status === 'resolved').length, 'text-emerald-700'],
-          ['不成立', reports.filter((report) => report.status === 'dismissed').length, 'text-zinc-600'],
-        ].map(([label, count, color]) => (
-          <div key={String(label)} className="bg-white border border-zinc-200 rounded-2xl p-3">
-            <p className="text-[11px] font-bold text-zinc-500">{label}</p>
-            <p className={`text-2xl font-black mt-1 ${color}`}>{count}</p>
-          </div>
-        ))}
-      </section>
+      {adminView === 'dashboard' ? <CoordinationDashboard reports={reports} workOrders={workOrders} jointOperations={jointOperations} onSelectCase={setSelectedId} onSelectWorkOrder={(id) => { onNotify(`已選取工作單 ${id}，請在案件與工作分配查看。`, 'info'); setAdminView('cases'); }} /> : <>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {(['all', 'pending', 'reviewing', 'classified', 'field_review_required', 'notice_issued', 'deadline_expired', 'clearance_approved', 'scheduled', 'in_progress', 'resolved', 'needs_information', 'duplicate', 'dismissed'] as const).map((status) => (
@@ -247,6 +254,22 @@ export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute,
                 }}
               />
 
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+                <div>
+                  <h4 className="text-sm font-black text-zinc-900">建立程序工作單</h4>
+                  <p className="text-[11px] text-zinc-600 mt-1">由管理員選擇示範模板；建立後需在工作分配中心逐張確認。</p>
+                </div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <label className="text-[11px] font-bold text-zinc-600 flex-1 min-w-[220px]">程序模板
+                    <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value as ProcedureTemplateId)} disabled={selectedReportWorkOrders.length > 0} className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs">
+                      {TEMPLATE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" disabled={selectedReportWorkOrders.length > 0} onClick={() => { onCreateTemplateWorkOrders(selectedReport.id, selectedTemplateId); onNotify('已建立示範程序工作單，請在工作分配中心逐張確認。', 'success'); }} className="rounded-xl bg-[#006b2c] px-3 py-2 text-xs font-bold text-white disabled:bg-zinc-300 disabled:text-zinc-600">建立工作單</button>
+                </div>
+                {selectedReportWorkOrders.length > 0 && <p className="text-[11px] font-bold text-zinc-600">此案件已有 {selectedReportWorkOrders.length} 張工作單，為避免重複建立，模板選擇及按鈕已停用。</p>}
+              </section>
+
               {getAllowedNextStatuses(selectedReport.status).length > 0 && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-600">處理備註（可選）</label>
@@ -290,7 +313,9 @@ export default function AdminTab({ reports, onPatchReport, onConfirmPatrolRoute,
         </section>
       </div>
 
-      <PatrolPlanner reports={reports} onConfirm={onConfirmPatrolRoute} />
+      <PatrolPlanner reports={reports} workOrders={workOrders} onConfirm={onConfirmPatrolRoute} />
+      <WorkAssignmentCentre reports={reports} workOrders={workOrders} teams={teams} onUpdateWorkOrder={onUpdateWorkOrder} onSelectCase={(id) => { setSelectedId(id); }} onNotify={onNotify} />
+      </>}
     </div>
   );
 }

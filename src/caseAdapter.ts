@@ -1,5 +1,5 @@
 import { canTransition, toPublicStatus } from './reportStatus';
-import type { AdminReport, PatrolRouteDraft, PublicReport, Report, ReportStatus } from './types';
+import type { AdminReport, PublicReport, Report, ReportStatus } from './types';
 
 function normalizeStatus(status: string): ReportStatus {
   if (status === 'noticed') return 'notice_issued';
@@ -81,31 +81,4 @@ export function applyAdminPatch(report: AdminReport, patch: Partial<AdminReport>
       },
     ],
   };
-}
-
-export function applyPatrolConfirmation(
-  reports: AdminReport[],
-  route: PatrolRouteDraft,
-  actor: string,
-  at: string,
-  routeId = 'demo-route',
-): AdminReport[] {
-  return reports.map((report) => {
-    if (!route.reportIds.includes(report.id) || !canTransition(report.status, 'scheduled')) return report;
-    return {
-      ...report,
-      status: 'scheduled',
-      patrolRouteId: routeId,
-      handledBy: actor,
-      updatedAt: at,
-      statusHistory: [
-        ...(report.statusHistory || []),
-        { status: 'scheduled', at, by: actor, note: '管理員已確認示範巡查次序。' },
-      ],
-      events: [
-        ...(report.events || []),
-        { action: 'route_assigned', fromStatus: report.status, toStatus: 'scheduled', actorUid: actor, actorRole: 'admin', createdAt: at },
-      ],
-    };
-  });
 }

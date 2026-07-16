@@ -1,4 +1,6 @@
-import type { AdminReport, Report } from './types';
+import type { AdminReport, DepartmentCode, Report, Team, WorkOrder, JointOperation, WorkOrderStatus } from './types';
+import { toAdminReport } from './caseAdapter';
+import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
 
 const DEMO_IMAGE = 'https://lh3.googleusercontent.com/aida-public/AB6AXuDAYCf6Xkf4n3qT8pMN7LJOvO0Tm8bTlqPgOgecV2SsNRtSf3bJYsNKe76k4CdtVbYqVorJLFz1C5vpFTdOIb1dr-04QHvGEDP8L9LAH9nYbs7P8UEuED875gMgD-GWiHfLtV639ROGYja9KtOkNLEsMPoc--7R60KwBmDFQqTvKrSXrfzrnhKM2GQjSCZMUcsT_CKvQ-y00-piszmb4s-eJgWQFIY5LKLhnk1tdOXnEoCRS_e3xfq-WDlk8y9lY5Z5d_mFge_N';
 
@@ -130,6 +132,141 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
       { status: 'duplicate', at: '2026-07-07T09:40:00.000Z', by: 'admin-demo', note: '已指向主案件。' },
     ],
   },
+  {
+    ...base,
+    id: 'demo-immediate-danger',
+    location: '沙田源禾路近體育館出入口',
+    description: '單車倒塌阻塞出口並有即時安全風險，需要跨部門跟進。',
+    citizenTags: ['safety_hazard'],
+    lat: 22.3828,
+    lng: 114.1885,
+    status: 'classified',
+    date: '2026-07-15',
+    caseType: 'safety_hazard',
+    urgency: 'emergency',
+    procedureConfirmed: true,
+  },
+  {
+    ...base,
+    id: 'demo-street-waste',
+    location: '大埔單車徑近廣福邨段',
+    description: '街道旁發現疑似棄置單車，安排食環署現場核實及移走。',
+    citizenTags: ['suspected_abandoned'],
+    lat: 22.4515,
+    lng: 114.1738,
+    status: 'field_review_required',
+    date: '2026-07-15',
+    caseType: 'suspected_abandoned',
+    urgency: 'urgent',
+    procedureConfirmed: true,
+  },
+  {
+    ...base,
+    id: 'demo-public-parking',
+    location: '沙田公共單車泊車處',
+    description: '公共單車泊車處聯合行動示範案件。',
+    citizenTags: ['suspected_abandoned', 'obstruction'],
+    lat: 22.3802,
+    lng: 114.1902,
+    status: 'notice_issued',
+    date: '2026-07-15',
+    caseType: 'suspected_abandoned',
+    urgency: 'urgent',
+    procedureConfirmed: true,
+  },
 ];
 
 export const INITIAL_REPORTS: Report[] = INITIAL_ADMIN_REPORTS.map((report) => ({ ...report }));
+
+const TEAM_DISTRICTS = ['沙田', '大埔', '南區'];
+const DEPARTMENT_TEAM_DEFINITIONS: Array<{
+  department: DepartmentCode;
+  capabilities: string[];
+  equipment: string[];
+}> = [
+  { department: 'HAD', capabilities: ['coordination-closeout'], equipment: ['case-management'] },
+  { department: 'TD', capabilities: ['suspension-notice'], equipment: ['temporary-signage'] },
+  { department: 'LandsD', capabilities: ['statutory-notice', 'custody-disposal'], equipment: ['notice-kit', 'custody-vehicle'] },
+  { department: 'FEHD', capabilities: ['site-verification', 'bicycle-removal'], equipment: ['camera', 'removal-vehicle'] },
+  { department: 'HKPF', capabilities: ['safety-response', 'site-closure'], equipment: ['safety-kit', 'closure-barrier'] },
+];
+
+export const DEMO_TEAMS: Team[] = DEPARTMENT_TEAM_DEFINITIONS.flatMap(({ department, capabilities, equipment }) => [
+  {
+    id: `team-${department.toLowerCase()}-shatin`,
+    name: `${department} 沙田隊`,
+    department,
+    districts: ['沙田'],
+    capabilities,
+    equipment,
+    onDuty: true,
+    dailyCapacity: 5,
+    activeWorkload: 1,
+  },
+  {
+    id: `team-${department.toLowerCase()}-support`,
+    name: `${department} 跨區支援隊`,
+    department,
+    districts: TEAM_DISTRICTS,
+    capabilities,
+    equipment,
+    onDuty: true,
+    dailyCapacity: 5,
+    activeWorkload: 2,
+  },
+]);
+
+const TEAM_BY_DEPARTMENT = Object.fromEntries(
+  DEPARTMENT_TEAM_DEFINITIONS.map(({ department }) => [department, `team-${department.toLowerCase()}-shatin`]),
+) as Record<DepartmentCode, string>;
+
+function createTemplateOrders(reportId: string, templateId: ProcedureTemplateId, createdAt: string, jointOperationId?: string): WorkOrder[] {
+  const report = INITIAL_ADMIN_REPORTS.find((item) => item.id === reportId);
+  if (!report) throw new Error(`Missing demo report: ${reportId}`);
+  return createWorkOrdersFromTemplate(toAdminReport(report), templateId, createdAt, jointOperationId);
+}
+
+function setDemoOrderState(order: WorkOrder, status: WorkOrderStatus, blockerReason?: string): WorkOrder {
+  return {
+    ...order,
+    assignedTeamId: TEAM_BY_DEPARTMENT[order.leadDepartment],
+    status,
+    ...(status === 'blocked' ? { blockerReason: blockerReason || '等待現場安全條件確認' } : {}),
+    evidenceChecklist: status === 'completed'
+      ? order.evidenceChecklist.map((item) => ({ ...item, completed: true }))
+      : order.evidenceChecklist,
+  };
+}
+
+const DEMO_CREATED_AT = '2026-07-15T09:00:00.000Z';
+const immediateDangerOrders = createTemplateOrders('demo-immediate-danger', 'immediate_danger', DEMO_CREATED_AT)
+  .map((order, index) => setDemoOrderState(order, index === 0 ? 'in_progress' : 'draft'));
+const streetWasteOrders = createTemplateOrders('demo-street-waste', 'street_waste', DEMO_CREATED_AT)
+  .map((order, index) => setDemoOrderState(order, index === 0 ? 'scheduled' : 'draft'));
+const publicParkingOperationId = 'joint-demo-public-parking';
+const publicParkingOrders = createTemplateOrders(
+  'demo-public-parking',
+  'public_bike_parking_joint_operation',
+  DEMO_CREATED_AT,
+  publicParkingOperationId,
+).map((order, index) => setDemoOrderState(order, [
+  'completed', 'scheduled', 'awaiting_acceptance', 'blocked', 'draft', 'draft',
+][index] as WorkOrderStatus, index === 3 ? '等待移走行動日及現場安全確認' : undefined));
+
+export const INITIAL_WORK_ORDERS: WorkOrder[] = [
+  ...immediateDangerOrders,
+  ...streetWasteOrders,
+  ...publicParkingOrders,
+];
+
+export const INITIAL_JOINT_OPERATIONS: JointOperation[] = [{
+  id: publicParkingOperationId,
+  title: '沙田公共單車泊車處聯合行動',
+  location: '沙田公共單車泊車處',
+  district: '沙田',
+  actionDate: '2026-07-15',
+  coordinatingDepartment: 'HAD',
+  participatingDepartments: ['TD', 'HKPF', 'LandsD', 'FEHD', 'HAD'],
+  mandatoryWorkOrderIds: publicParkingOrders.map((order) => order.id),
+  status: 'preparing',
+}];
