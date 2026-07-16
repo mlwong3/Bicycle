@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { ManualRubric, RubricObservation } from '../types';
 
 const RUBRIC_FIELDS: Array<{ key: keyof ManualRubric; label: string }> = [
@@ -25,6 +26,7 @@ interface ManualRubricFormProps {
 
 export default function ManualRubricForm({ rubric, onSave }: ManualRubricFormProps) {
   const [draft, setDraft] = useState<ManualRubric>(() => rubric || createEmptyRubric());
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     setDraft(rubric || createEmptyRubric());
@@ -34,12 +36,28 @@ export default function ManualRubricForm({ rubric, onSave }: ManualRubricFormPro
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
+  // 是否已有評分，用於收合狀態下顯示「已評分」提示
+  const hasScores = RUBRIC_FIELDS.some(({ key }) => draft[key].observable && draft[key].score !== null);
+
   return (
-    <div className="space-y-3">
-      <div>
-        <h4 className="text-sm font-black text-zinc-900">人工相片觀察 rubric</h4>
-        <p className="text-[11px] text-zinc-500 mt-1">不可觀察請選「看不到」，不會當作 0 分。</p>
-      </div>
+    <div className="rounded-2xl border border-zinc-200">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-black text-zinc-900">評分</h4>
+            {hasScores && <span className="rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5">已評分</span>}
+          </div>
+          <p className="text-[11px] text-zinc-500 mt-0.5">人工相片觀察評分；不可觀察請選「看不到」，不會當作 0 分。</p>
+        </div>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="space-y-3 border-t border-zinc-100 px-4 pb-4 pt-3">
       <div className="space-y-2">
         {RUBRIC_FIELDS.map(({ key, label }) => {
           const observation = draft[key];
@@ -81,6 +99,8 @@ export default function ManualRubricForm({ rubric, onSave }: ManualRubricFormPro
       <button type="button" onClick={() => onSave(draft)} className="w-full rounded-xl bg-zinc-900 text-white py-2.5 text-xs font-bold hover:bg-zinc-700">
         保存人工觀察
       </button>
+        </div>
+      )}
     </div>
   );
 }

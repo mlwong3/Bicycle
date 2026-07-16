@@ -1,6 +1,37 @@
-import type { AdminReport, DepartmentCode, Report, Team, WorkOrder, JointOperation, WorkOrderStatus } from './types';
+import type { AdminReport, AiCaseClassification, DepartmentCode, ManualRubricRecord, Report, Team, WorkOrder, JointOperation, WorkOrderStatus } from './types';
 import { toAdminReport } from './caseAdapter';
 import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
+
+// 為示範案件產生一致的「已保存分類」，讓處理流程指示器呈順序完成，不會出現後段已完成而分類未完成的跳空
+function demoClassification(caseType: AdminReport['caseType'], urgency: AdminReport['urgency'], suggestedDepartment: string): AiCaseClassification {
+  return {
+    caseType,
+    urgency,
+    obstructionLevel: caseType === 'obstruction' ? 3 : caseType === 'safety_hazard' ? 2 : 0,
+    suggestedDepartment,
+    missingInformation: [],
+    possibleDuplicateReportIds: [],
+    priorityBand: urgency === 'normal' ? 'low' : 'high',
+    rationale: ['示範分類：已由管理員覆核並保存。'],
+    confidence: 'high',
+    source: 'rule-fallback',
+    suggestedAction: '建議交由負責部門再確認',
+  };
+}
+
+// 為已確認程序的示範案件補上人工評分紀錄，使「現場評估」先於「程序確認」完成
+function demoRubric(completedAt: string): ManualRubricRecord {
+  return {
+    rust: { score: 1, observable: true },
+    tire: { score: 2, observable: true },
+    dust: { score: 1, observable: true },
+    attachment: { score: 1, observable: true },
+    missing: { score: 0, observable: true },
+    lock: { score: null, observable: false },
+    completedBy: 'admin-demo',
+    completedAt,
+  };
+}
 
 const DEMO_IMAGE = 'https://lh3.googleusercontent.com/aida-public/AB6AXuDAYCf6Xkf4n3qT8pMN7LJOvO0Tm8bTlqPgOgecV2SsNRtSf3bJYsNKe76k4CdtVbYqVorJLFz1C5vpFTdOIb1dr-04QHvGEDP8L9LAH9nYbs7P8UEuED875gMgD-GWiHfLtV639ROGYja9KtOkNLEsMPoc--7R60KwBmDFQqTvKrSXrfzrnhKM2GQjSCZMUcsT_CKvQ-y00-piszmb4s-eJgWQFIY5LKLhnk1tdOXnEoCRS_e3xfq-WDlk8y9lY5Z5d_mFge_N';
 
@@ -39,6 +70,7 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     status: 'classified',
     date: '2026-07-12',
     caseType: 'suspected_abandoned',
+    aiClassification: demoClassification('suspected_abandoned', 'normal', '示範單車管理小組'),
     statusHistory: [
       { status: 'pending', at: '2026-07-12T08:30:00.000Z', by: 'citizen' },
       { status: 'reviewing', at: '2026-07-12T09:00:00.000Z', by: 'admin-demo' },
@@ -56,6 +88,7 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     status: 'field_review_required',
     date: '2026-07-11',
     caseType: 'damaged_bicycle',
+    aiClassification: demoClassification('damaged_bicycle', 'normal', '示範單車管理小組'),
     statusHistory: [
       { status: 'pending', at: '2026-07-11T11:00:00.000Z', by: 'citizen' },
       { status: 'reviewing', at: '2026-07-11T11:20:00.000Z', by: 'admin-demo' },
@@ -76,6 +109,9 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     caseType: 'obstruction',
     urgency: 'urgent',
     noticeDate: '2026-07-10',
+    procedureConfirmed: true,
+    aiClassification: demoClassification('obstruction', 'urgent', '示範跨部門聯合小組'),
+    manualRubric: demoRubric('2026-07-10T09:50:00.000Z'),
     statusHistory: [
       { status: 'pending', at: '2026-07-10T09:00:00.000Z', by: 'citizen' },
       { status: 'reviewing', at: '2026-07-10T09:20:00.000Z', by: 'admin-demo' },
@@ -96,6 +132,7 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     caseType: 'suspected_abandoned',
     urgency: 'urgent',
     procedureConfirmed: true,
+    aiClassification: demoClassification('suspected_abandoned', 'urgent', '示範單車管理小組'),
     manualRubric: {
       rust: { score: 2, observable: true, note: '鏈條有鏽蝕。' },
       tire: { score: 2, observable: true, note: '前胎明顯洩氣。' },
@@ -145,6 +182,8 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     caseType: 'safety_hazard',
     urgency: 'emergency',
     procedureConfirmed: true,
+    aiClassification: demoClassification('safety_hazard', 'emergency', '示範現場安全小組'),
+    manualRubric: demoRubric('2026-07-15T08:40:00.000Z'),
   },
   {
     ...base,
@@ -159,6 +198,8 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     caseType: 'suspected_abandoned',
     urgency: 'urgent',
     procedureConfirmed: true,
+    aiClassification: demoClassification('suspected_abandoned', 'urgent', '示範單車管理小組'),
+    manualRubric: demoRubric('2026-07-15T08:45:00.000Z'),
   },
   {
     ...base,
@@ -173,6 +214,8 @@ export const INITIAL_ADMIN_REPORTS: AdminReport[] = [
     caseType: 'suspected_abandoned',
     urgency: 'urgent',
     procedureConfirmed: true,
+    aiClassification: demoClassification('suspected_abandoned', 'urgent', '示範泊位管理小組'),
+    manualRubric: demoRubric('2026-07-15T08:50:00.000Z'),
   },
 ];
 

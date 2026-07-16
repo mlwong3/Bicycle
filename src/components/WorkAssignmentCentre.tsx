@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { applyWorkOrderTransition, assignWorkOrder, isWorkOrderReady } from '../workOrders';
 import { recommendTeams } from '../assignment';
 import type { AdminReport, Team, WorkOrder, WorkOrderStatus } from '../types';
@@ -7,6 +7,8 @@ export interface WorkAssignmentCentreProps {
   reports: AdminReport[];
   workOrders: WorkOrder[];
   teams: Team[];
+  focusRequest?: { id: string; nonce: number } | null;
+  onFocusHandled?: () => void;
   onUpdateWorkOrder: (next: WorkOrder) => void;
   onSelectCase: (caseId: string) => void;
   onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
@@ -25,6 +27,11 @@ export function isWorkOrderVisibleInQueue(status: WorkOrderStatus, queue: WorkOr
 const REASSIGNABLE_STATUSES: readonly WorkOrderStatus[] = ['draft', 'awaiting_acceptance', 'declined', 'blocked'];
 export function canShowReassignment(status: WorkOrderStatus): boolean { return REASSIGNABLE_STATUSES.includes(status); }
 
+// 由工作單狀態反查它會出現在哪一條隊列 tab，供儀表板跳轉時自動切換
+export function getQueueForStatus(status: WorkOrderStatus): WorkOrderStatus {
+  return queues.find((queue) => isWorkOrderVisibleInQueue(status, queue)) ?? 'draft';
+}
+
 export function getAssignmentConfirmationReason(order: WorkOrder, teamId: string, reason: string): string | undefined {
   if (order.assignedTeamId && order.assignedTeamId !== teamId && !reason.trim()) return '重新分配必須填寫理由';
   return undefined;
@@ -40,11 +47,38 @@ export function getWorkOrderLockReason(order: WorkOrder, allOrders: WorkOrder[],
   return '未符合可執行條件';
 }
 
-export default function WorkAssignmentCentre({ workOrders, teams, onUpdateWorkOrder, onSelectCase, onNotify }: WorkAssignmentCentreProps) {
+export default function WorkAssignmentCentre({ workOrders, teams, focusRequest, onFocusHandled, onUpdateWorkOrder, onSelectCase, onNotify }: WorkAssignmentCentreProps) {
   const [queue, setQueue] = useState<WorkOrderStatus>('draft');
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [now] = useState(() => new Date());
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const visible = workOrders.filter((order) => isWorkOrderVisibleInQueue(order.status, queue));
+
+  // 儀表板點選工作單後，切到對應隊列並記下要高亮的工作單
+  useEffect(() => {
+    if (!focusRequest) return;
+    const order = workOrders.find((item) => item.id === focusRequest.id);
+    if (order) {
+      setQueue(getQueueForStatus(order.status));
+      setHighlightId(focusRequest.id);
+    }
+    onFocusHandled?.();
+    // 只在收到新的跳轉請求時執行；workOrders / onFocusHandled 不納入依賴以免重複觸發
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest]);
+
+  // 高亮維持約 2 秒後自動消失
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), 2200);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+
+  // 隊列切換或高亮目標改變後，把該卡片捲入畫面中央
+  useEffect(() => {
+    if (!highlightId) return;
+    document.getElementById(`wo-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightId, queue]);
 
   const update = (order: WorkOrder, next: WorkOrderStatus) => {
     const updated = applyWorkOrderTransition(order, next, 'admin-demo', new Date().toISOString(), reasons[order.id] ?? '', workOrders, now);
@@ -74,7 +108,7 @@ export default function WorkAssignmentCentre({ workOrders, teams, onUpdateWorkOr
       const lock = getWorkOrderLockReason(order, workOrders, now);
       const canReassign = Boolean(order.assignedTeamId && canShowReassignment(order.status));
       const recommendations = canReassign || !order.assignedTeamId ? recommendTeams(order, teams, now).slice(0, 3) : [];
-      return <article key={order.id} className="bg-white border border-zinc-200 rounded-2xl p-4 space-y-3">
+      return <article key={order.id} id={`wo-${order.id}`} className={`bg-white border rounded-2xl p-4 space-y-3 transition-shadow ${highlightId === order.id ? 'border-[#006b2c] ring-2 ring-[#006b2c] ring-offset-2' : 'border-zinc-200'}`}>
         <div className="flex justify-between gap-3"><div><h3 className="font-black">{order.title}</h3><button type="button" onClick={() => onSelectCase(order.caseId)} className="text-xs text-[#006b2c] underline">{order.location} ・ {order.leadDepartment}</button></div><span className="text-[11px] font-bold text-zinc-500">{labels[order.status]}</span></div>
         <div className="text-xs text-zinc-600">團隊：{team?.name ?? '尚未分配'}　到期：{order.dueAt?.slice(0, 10) ?? '未設定'}<br />前置：{order.prerequisiteWorkOrderIds.length ? order.prerequisiteWorkOrderIds.join('、') : '無'}{order.blockerReason && <><br /><span className="text-rose-700 font-bold">受阻原因：{order.blockerReason}</span></>}</div>
         {recommendations.length > 0 && <div className="rounded-xl bg-emerald-50 p-3 space-y-2"><p className="text-xs font-black">{canReassign ? '規則推薦／重新分配（人工確認）' : '規則推薦（人工確認）'}</p>{recommendations.map((recommendation) => { const recommendedTeam = teams.find((item) => item.id === recommendation.teamId); const sameTeam = recommendation.teamId === order.assignedTeamId; return <div key={recommendation.teamId} className="flex items-center justify-between gap-2 text-[11px]"><span>{recommendedTeam?.name} · {recommendation.score}分<br /><span className="text-zinc-500">{recommendation.reasons.join('、')}</span></span>{!sameTeam && <button type="button" onClick={() => recommendedTeam && confirmTeam(order, recommendedTeam)} className="rounded-lg bg-[#006b2c] text-white px-2 py-1 font-bold">{canReassign ? '重新分配' : '確認分配'}</button>}</div>; })}</div>}
