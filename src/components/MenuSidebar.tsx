@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { X, Map, AlertTriangle, Cpu, User, Share2, HelpCircle, Trophy, ShieldAlert } from 'lucide-react';
+import { X, Map, AlertTriangle, Recycle, Cpu, User, Share2, HelpCircle, Trophy, ShieldAlert } from 'lucide-react';
 
 interface MenuSidebarProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ export default function MenuSidebar({ isOpen, onClose, activeTab, onSelectTab, u
   const menuItems = [
     { id: 'map', name: '地圖導航', icon: Map },
     { id: 'report', name: '違規舉報', icon: AlertTriangle },
+    { id: 'recycle', name: '單車回收站', icon: Recycle },
     { id: 'nfc', name: 'NFC 登記', icon: Cpu },
     { id: 'personal', name: '個人中心', icon: User },
     { id: 'admin', name: '管理員模式', icon: ShieldAlert },
