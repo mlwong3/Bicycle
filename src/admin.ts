@@ -3,9 +3,22 @@ import {
   getStatusLabel as getWorkflowStatusLabel,
   getPublicStatusLabel,
 } from './reportStatus';
-import type { ReportStatus, StatusHistoryEntry } from './types';
+import type { DepartmentCode, ReportStatus, StatusHistoryEntry } from './types';
 
 export type { ReportStatus, StatusHistoryEntry } from './types';
+
+// 政府部門中文名稱對照表，供各處顯示部門時使用，內部仍以英文代碼作資料識別
+export const DEPARTMENT_LABELS: Record<DepartmentCode, string> = {
+  FEHD: '食物環境衞生署',
+  HAD: '民政事務總署',
+  TD: '運輸署',
+  LandsD: '地政總署',
+  HKPF: '香港警務處',
+};
+
+export function getDepartmentLabel(department: DepartmentCode): string {
+  return DEPARTMENT_LABELS[department];
+}
 
 type ReportWithWorkflow = {
   status: ReportStatus;
