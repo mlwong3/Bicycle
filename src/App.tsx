@@ -19,7 +19,6 @@ import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStat
 import { applyAdminPatch, toAdminReport } from './caseAdapter';
 import { getStatusLabel } from './reportStatus';
 import { createCitizenReport, type CitizenReportSubmission } from './reportWorkflow';
-import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
 import { applyWorkOrderRouteConfirmation } from './workOrders';
 
 type NoticeTone = 'success' | 'info' | 'warning' | 'error';
@@ -201,21 +200,6 @@ export default function App() {
 
   const handleUpdateWorkOrder = (next: WorkOrder) => {
     setWorkOrders((previous) => previous.map((order) => order.id === next.id ? next : order));
-  };
-
-  const handleCreateTemplateWorkOrders = (reportId: string, templateId: ProcedureTemplateId) => {
-    const report = reports.find((item) => item.id === reportId);
-    if (!report) return;
-    const created = createWorkOrdersFromTemplate(
-      toAdminReport(report),
-      templateId,
-      new Date().toISOString(),
-    );
-    setWorkOrders((previous) => {
-      const existingIds = new Set(previous.map((order) => order.id));
-      const additions = created.filter((order) => !existingIds.has(order.id));
-      return additions.length > 0 ? [...previous, ...additions] : previous;
-    });
   };
 
   const handleResetDemoReports = () => {
@@ -413,11 +397,9 @@ export default function App() {
                 <AdminTab
                   reports={adminReports}
                   workOrders={workOrders}
-                  jointOperations={jointOperations}
                   teams={DEMO_TEAMS}
                   onPatchReport={handlePatchAdminReport}
                   onUpdateWorkOrder={handleUpdateWorkOrder}
-                  onCreateTemplateWorkOrders={handleCreateTemplateWorkOrders}
                   onConfirmPatrolRoute={handleConfirmPatrolRoute}
                   onResetDemoReports={handleResetDemoReports}
                   onNotify={showNotice}

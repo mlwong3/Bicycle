@@ -10,24 +10,16 @@ import {
   type ReportStatus,
 } from '../admin';
 import { recordAdminDemoLogin } from '../backend';
-import type { AdminReport, AiCaseClassification, JointOperation, ManualRubric, PatrolRouteDraft, ProcedureConfig, Team, WorkOrder } from '../types';
-import type { ProcedureTemplateId } from '../workOrderTemplates';
-import CoordinationDashboard from './CoordinationDashboard';
+import type { AdminReport, PatrolRouteDraft, Team, WorkOrder } from '../types';
 import WorkAssignmentCentre from './WorkAssignmentCentre';
-import ManualRubricForm from './ManualRubricForm';
-import ProcedureConfigPanel from './ProcedureConfigPanel';
-import CaseClassificationPanel from './CaseClassificationPanel';
-import CaseWorkflowStepper from './CaseWorkflowStepper';
 import PatrolPlanner from './PatrolPlanner';
 
 interface AdminTabProps {
   reports: AdminReport[];
   workOrders: WorkOrder[];
-  jointOperations: JointOperation[];
   teams: Team[];
   onPatchReport: (reportId: string, patch: Partial<AdminReport>, note?: string) => void;
   onUpdateWorkOrder: (next: WorkOrder) => void;
-  onCreateTemplateWorkOrders: (reportId: string, templateId: ProcedureTemplateId) => void;
   onConfirmPatrolRoute: (route: PatrolRouteDraft) => void;
   onResetDemoReports: () => void;
   onNotify: (message: string, tone?: 'success' | 'info' | 'warning' | 'error') => void;
@@ -49,12 +41,6 @@ const STATUS_STYLES: Record<ReportStatus, string> = {
   dismissed: 'bg-zinc-200 text-zinc-700',
 };
 
-const TEMPLATE_OPTIONS: Array<{ id: ProcedureTemplateId; label: string }> = [
-  { id: 'immediate_danger', label: '即時危險安全處理' },
-  { id: 'street_waste', label: '街道棄置物處理' },
-  { id: 'public_bike_parking_joint_operation', label: '公共單車泊車處聯合行動' },
-];
-
 // 把 13 個處理狀態收攏成 5 個階段組，讓案件篩選一目了然，減少橫向捲動
 type CaseStageId = 'all' | 'intake' | 'assessment' | 'notice' | 'clearing' | 'closed';
 const CASE_STAGES: Array<{ id: CaseStageId; label: string; statuses: ReportStatus[] }> = [
@@ -66,15 +52,13 @@ const CASE_STAGES: Array<{ id: CaseStageId; label: string; statuses: ReportStatu
   { id: 'closed', label: '已完結', statuses: ['resolved', 'duplicate', 'dismissed'] },
 ];
 
-export default function AdminTab({ reports, workOrders, jointOperations, teams, onPatchReport, onUpdateWorkOrder, onCreateTemplateWorkOrders, onConfirmPatrolRoute, onResetDemoReports, onNotify }: AdminTabProps) {
+export default function AdminTab({ reports, workOrders, teams, onPatchReport, onUpdateWorkOrder, onConfirmPatrolRoute, onResetDemoReports, onNotify }: AdminTabProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => hasAdminSession());
   const [password, setPassword] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(reports[0]?.id || null);
   const [statusFilter, setStatusFilter] = useState<CaseStageId>('all');
   const [note, setNote] = useState('');
-  const [adminView, setAdminView] = useState<'dashboard' | 'cases' | 'assignment'>('dashboard');
-  const [selectedTemplateId, setSelectedTemplateId] = useState<ProcedureTemplateId>('immediate_danger');
-  const [focusRequest, setFocusRequest] = useState<{ id: string; nonce: number } | null>(null);
+  const [adminView, setAdminView] = useState<'cases' | 'assignment'>('cases');
 
   const visibleReports = useMemo(() => {
     if (statusFilter === 'all') return reports;
@@ -82,19 +66,16 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
     return stage ? reports.filter((report) => stage.statuses.includes(report.status)) : reports;
   }, [reports, statusFilter]);
   const selectedReport = reports.find((report) => report.id === selectedId) || visibleReports[0] || reports[0];
-  const selectedReportWorkOrders = selectedReport ? workOrders.filter((order) => order.caseId === selectedReport.id) : [];
-  const expectedPassword = import.meta.env.VITE_ADMIN_DEMO_PASSWORD || 'admin2026';
+  const expectedPassword = import.meta.env.VITE_ADMIN_DEMO_PASSWORD || '1234';
 
   // tab 上的待辦數量徽章：案件＝未完結的案件；工作分配＝需管理員處理的工作單
   const casesBadge = reports.filter((report) => !['resolved', 'dismissed', 'duplicate'].includes(report.status)).length;
   const assignmentBadge = workOrders.filter((order) => ['draft', 'awaiting_acceptance', 'blocked'].includes(order.status)).length;
-  const VIEW_TABS: Array<{ id: 'dashboard' | 'cases' | 'assignment'; label: string; badge: number }> = [
-    { id: 'dashboard', label: '統籌儀表板', badge: 0 },
+  const VIEW_TABS: Array<{ id: 'cases' | 'assignment'; label: string; badge: number }> = [
     { id: 'cases', label: '案件處理', badge: casesBadge },
     { id: 'assignment', label: '工作分配', badge: assignmentBadge },
   ];
-  const VIEW_TITLES: Record<'dashboard' | 'cases' | 'assignment', string> = {
-    dashboard: '跨部門統籌儀表板',
+  const VIEW_TITLES: Record<'cases' | 'assignment', string> = {
     cases: '案件處理',
     assignment: '工作分配與巡查',
   };
@@ -202,8 +183,6 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
         </nav>
       </header>
 
-      {adminView === 'dashboard' && <CoordinationDashboard reports={reports} workOrders={workOrders} jointOperations={jointOperations} onSelectCase={(id) => { setSelectedId(id); setAdminView('cases'); }} onSelectWorkOrder={(id) => { setFocusRequest({ id, nonce: Date.now() }); setAdminView('assignment'); }} />}
-
       {adminView === 'cases' && <>
 
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -269,8 +248,6 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
                 {selectedReport.imageUrl && <img src={selectedReport.imageUrl} alt="案件相片" className="w-24 h-24 rounded-xl object-cover bg-zinc-100" />}
               </div>
 
-              <CaseWorkflowStepper report={selectedReport} workOrders={workOrders} />
-
               <div className="rounded-xl bg-zinc-50 p-3 text-sm text-zinc-700 leading-relaxed">{selectedReport.description}</div>
 
               <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -279,50 +256,6 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
                   ? `已記錄座標：${selectedReport.lat?.toFixed(5)}, ${selectedReport.lng?.toFixed(5)}`
                   : '未有 GPS 座標，日後不會納入示範優化路線。'}
               </div>
-
-              <CaseClassificationPanel
-                report={selectedReport}
-                onApply={(classification: AiCaseClassification) => {
-                  onPatchReport(selectedReport.id, { aiClassification: classification });
-                  onNotify('已保存分類建議，仍需管理員覆核。', 'success');
-                }}
-                onPatch={(patch) => onPatchReport(selectedReport.id, patch)}
-              />
-
-              <ManualRubricForm
-                rubric={selectedReport.manualRubric}
-                onSave={(manualRubric: ManualRubric) => {
-                  onPatchReport(selectedReport.id, {
-                    manualRubric: { ...manualRubric, completedBy: 'admin-demo', completedAt: new Date().toISOString() },
-                  });
-                  onNotify('已保存人工觀察記錄。', 'success');
-                }}
-              />
-
-              <ProcedureConfigPanel
-                selected={selectedReport.procedureConfigSnapshot}
-                confirmed={selectedReport.procedureConfirmed}
-                onConfirm={(config: ProcedureConfig, deadlineAt) => {
-                  onPatchReport(selectedReport.id, { procedureConfigSnapshot: config, procedureConfirmed: true, deadlineAt });
-                  onNotify('已確認本次示範程序。', 'success');
-                }}
-              />
-
-              <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
-                <div>
-                  <h4 className="text-sm font-black text-zinc-900">建立程序工作單</h4>
-                  <p className="text-[11px] text-zinc-600 mt-1">由管理員選擇示範模板；建立後需在工作分配中心逐張確認。</p>
-                </div>
-                <div className="flex flex-wrap gap-2 items-end">
-                  <label className="text-[11px] font-bold text-zinc-600 flex-1 min-w-[220px]">程序模板
-                    <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value as ProcedureTemplateId)} disabled={selectedReportWorkOrders.length > 0} className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs">
-                      {TEMPLATE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <button type="button" disabled={selectedReportWorkOrders.length > 0} onClick={() => { onCreateTemplateWorkOrders(selectedReport.id, selectedTemplateId); onNotify('已建立示範程序工作單，請在工作分配中心逐張確認。', 'success'); }} className="rounded-xl bg-[#006b2c] px-3 py-2 text-xs font-bold text-white disabled:bg-zinc-300 disabled:text-zinc-600">建立工作單</button>
-                </div>
-                {selectedReportWorkOrders.length > 0 && <p className="text-[11px] font-bold text-zinc-600">此案件已有 {selectedReportWorkOrders.length} 張工作單，為避免重複建立，模板選擇及按鈕已停用。</p>}
-              </section>
 
               {getAllowedNextStatuses(selectedReport.status).length > 0 && (
                 <div className="space-y-2">
@@ -370,7 +303,7 @@ export default function AdminTab({ reports, workOrders, jointOperations, teams, 
 
       {adminView === 'assignment' && <div className="space-y-5">
         <PatrolPlanner reports={reports} workOrders={workOrders} onConfirm={onConfirmPatrolRoute} />
-        <WorkAssignmentCentre reports={reports} workOrders={workOrders} teams={teams} focusRequest={focusRequest} onFocusHandled={() => setFocusRequest(null)} onUpdateWorkOrder={onUpdateWorkOrder} onSelectCase={(id) => { setSelectedId(id); setAdminView('cases'); }} onNotify={onNotify} />
+        <WorkAssignmentCentre reports={reports} workOrders={workOrders} teams={teams} onUpdateWorkOrder={onUpdateWorkOrder} onSelectCase={(id) => { setSelectedId(id); setAdminView('cases'); }} onNotify={onNotify} />
       </div>}
     </div>
   );

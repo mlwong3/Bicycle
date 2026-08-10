@@ -1,5 +1,6 @@
 import type { AdminReport, AiCaseClassification, DepartmentCode, ManualRubricRecord, Report, Team, WorkOrder, JointOperation, WorkOrderStatus } from './types';
 import { toAdminReport } from './caseAdapter';
+import { getDepartmentLabel } from './admin';
 import { createWorkOrdersFromTemplate, type ProcedureTemplateId } from './workOrderTemplates';
 
 // 為示範案件產生一致的「已保存分類」，讓處理流程指示器呈順序完成，不會出現後段已完成而分類未完成的跳空
@@ -237,7 +238,7 @@ const DEPARTMENT_TEAM_DEFINITIONS: Array<{
 export const DEMO_TEAMS: Team[] = DEPARTMENT_TEAM_DEFINITIONS.flatMap(({ department, capabilities, equipment }) => [
   {
     id: `team-${department.toLowerCase()}-shatin`,
-    name: `${department} 沙田隊`,
+    name: `${getDepartmentLabel(department)} 沙田隊`,
     department,
     districts: ['沙田'],
     capabilities,
@@ -248,7 +249,7 @@ export const DEMO_TEAMS: Team[] = DEPARTMENT_TEAM_DEFINITIONS.flatMap(({ departm
   },
   {
     id: `team-${department.toLowerCase()}-support`,
-    name: `${department} 跨區支援隊`,
+    name: `${getDepartmentLabel(department)} 跨區支援隊`,
     department,
     districts: TEAM_DISTRICTS,
     capabilities,

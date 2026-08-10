@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { applyWorkOrderTransition, assignWorkOrder, isWorkOrderReady } from '../workOrders';
 import { recommendTeams } from '../assignment';
+import { getDepartmentLabel } from '../admin';
 import type { AdminReport, Team, WorkOrder, WorkOrderStatus } from '../types';
 
 export interface WorkAssignmentCentreProps {
@@ -109,7 +110,7 @@ export default function WorkAssignmentCentre({ workOrders, teams, focusRequest, 
       const canReassign = Boolean(order.assignedTeamId && canShowReassignment(order.status));
       const recommendations = canReassign || !order.assignedTeamId ? recommendTeams(order, teams, now).slice(0, 3) : [];
       return <article key={order.id} id={`wo-${order.id}`} className={`bg-white border rounded-2xl p-4 space-y-3 transition-shadow ${highlightId === order.id ? 'border-[#006b2c] ring-2 ring-[#006b2c] ring-offset-2' : 'border-zinc-200'}`}>
-        <div className="flex justify-between gap-3"><div><h3 className="font-black">{order.title}</h3><button type="button" onClick={() => onSelectCase(order.caseId)} className="text-xs text-[#006b2c] underline">{order.location} ・ {order.leadDepartment}</button></div><span className="text-[11px] font-bold text-zinc-500">{labels[order.status]}</span></div>
+        <div className="flex justify-between gap-3"><div><h3 className="font-black">{order.title}</h3><button type="button" onClick={() => onSelectCase(order.caseId)} className="text-xs text-[#006b2c] underline">{order.location} ・ {getDepartmentLabel(order.leadDepartment)}</button></div><span className="text-[11px] font-bold text-zinc-500">{labels[order.status]}</span></div>
         <div className="text-xs text-zinc-600">團隊：{team?.name ?? '尚未分配'}　到期：{order.dueAt?.slice(0, 10) ?? '未設定'}<br />前置：{order.prerequisiteWorkOrderIds.length ? order.prerequisiteWorkOrderIds.join('、') : '無'}{order.blockerReason && <><br /><span className="text-rose-700 font-bold">受阻原因：{order.blockerReason}</span></>}</div>
         {recommendations.length > 0 && <div className="rounded-xl bg-emerald-50 p-3 space-y-2"><p className="text-xs font-black">{canReassign ? '規則推薦／重新分配（人工確認）' : '規則推薦（人工確認）'}</p>{recommendations.map((recommendation) => { const recommendedTeam = teams.find((item) => item.id === recommendation.teamId); const sameTeam = recommendation.teamId === order.assignedTeamId; return <div key={recommendation.teamId} className="flex items-center justify-between gap-2 text-[11px]"><span>{recommendedTeam?.name} · {recommendation.score}分<br /><span className="text-zinc-500">{recommendation.reasons.join('、')}</span></span>{!sameTeam && <button type="button" onClick={() => recommendedTeam && confirmTeam(order, recommendedTeam)} className="rounded-lg bg-[#006b2c] text-white px-2 py-1 font-bold">{canReassign ? '重新分配' : '確認分配'}</button>}</div>; })}</div>}
         {order.evidenceChecklist.length > 0 && <div className="space-y-1"><p className="text-xs font-black">完成證據</p>{order.evidenceChecklist.map((item) => <label key={item.id} className="block text-xs"><input type="checkbox" checked={item.completed} onChange={() => onUpdateWorkOrder({ ...order, evidenceChecklist: order.evidenceChecklist.map((evidence) => evidence.id === item.id ? { ...evidence, completed: !evidence.completed } : evidence) })} className="mr-2" />{item.label}</label>)}</div>}
