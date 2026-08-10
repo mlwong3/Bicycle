@@ -7,13 +7,14 @@ import { DEMO_TEAMS, INITIAL_JOINT_OPERATIONS, INITIAL_WORK_ORDERS } from './dem
 import Onboarding from './components/Onboarding';
 import MapTab from './components/MapTab';
 import ReportTab from './components/ReportTab';
+import RecycleTab from './components/RecycleTab';
 import NfcTab from './components/NfcTab';
 import PersonalTab from './components/PersonalTab';
 import MenuSidebar from './components/MenuSidebar';
 import SettingsModal from './components/SettingsModal';
 import AdminTab from './components/AdminTab';
 
-import { Menu, Settings, Map, AlertTriangle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
+import { Menu, Settings, Map, AlertTriangle, Recycle, Cpu, User, Share2, Award, LogOut } from 'lucide-react';
 import { clearAppStorage, readStoredJson, readStoredNumber, readStoredString, STORAGE_KEYS, writeStoredJson, writeStoredString } from './storage';
 import { isCloudBackendEnabled, syncBikeRegistration, syncReport, syncReportStatus, syncTrip, uploadReportImage } from './backend';
 import { applyAdminPatch, toAdminReport } from './caseAdapter';
@@ -277,7 +278,8 @@ export default function App() {
         <div className="flex-1 flex flex-col p-4 space-y-1.5 overflow-y-auto">
           {[
             { id: 'map', name: '地圖導航', icon: Map },
-            { id: 'report', name: '違規舉報與回收', icon: AlertTriangle },
+            { id: 'report', name: '違規舉報', icon: AlertTriangle },
+            { id: 'recycle', name: '單車回收站', icon: Recycle },
             { id: 'nfc', name: 'NFC 登記保護', icon: Cpu },
             { id: 'personal', name: '個人中心 & 數據', icon: User },
             { id: 'admin', name: '管理員模式', icon: Settings },
@@ -368,10 +370,13 @@ export default function App() {
                 />
               )}
               {currentTab === 'report' && (
-                <ReportTab 
-                  onAddReport={handleAddReport} 
+                <ReportTab
+                  onAddReport={handleAddReport}
                   onNotify={showNotice}
                 />
+              )}
+              {currentTab === 'recycle' && (
+                <RecycleTab onNotify={showNotice} />
               )}
               {currentTab === 'nfc' && (
                 <NfcTab 
@@ -414,6 +419,7 @@ export default function App() {
           {[
             { id: 'map', name: '地圖', icon: Map },
             { id: 'report', name: '舉報', icon: AlertTriangle },
+            { id: 'recycle', name: '回收', icon: Recycle },
             { id: 'nfc', name: 'NFC', icon: Cpu },
             { id: 'personal', name: '個人', icon: User }
           ].map((tab) => {
