@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>騎跡 NFC 診斷工具</title>
+<!--
+  獨立 NFC 診斷 / 寫卡工具（純 HTML + JS，零外部依賴）
+  ────────────────────────────────────────────────────
+  目的：在不改動 React App 的前提下，實地驗證四件事——
+    1. 這台手機 / 這個網址到底支不支援 Web NFC（含安全上下文）
+    2. 讀卡是真的沒反應，還是錯誤被靜默吞掉
+    3. 「讀卡後頁面刷新」是不是標籤裡的 url 記錄觸發 Android NFC dispatch
+       （關鍵手法：日誌寫進 localStorage，頁面被重新載入也不會消失）
+    4. 上傳 Firestore 失敗的確切原因（用 REST 打同一組 Firestore 規則）
+
+  部署後網址： https://bicycle-ee76c.web.app/nfc-tool.html
+  必須用 Android Chrome 89+ 開啟，且必須是 https://（http 或 IP 會被瀏覽器擋掉）。
+-->
+<style>
+  :root {
+    --brand: #006b2c;
+    --brand-soft: rgba(0, 107, 44, 0.08);
+    --ok: #15803d;
+    --warn: #b45309;
+    --err: #b91c1c;
+    --ink: #18181b;
+    --muted: #71717a;
+    --line: #e4e4e7;
+    --bg: #fafafa;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px 14px 48px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC",
+                 "PingFang TC", "Microsoft JhengHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 17px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; margin: 0 0 10px; color: var(--brand); letter-spacing: 0.02em; }
+  .sub { font-size: 11px; color: var(--muted); margin: 0 0 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  /* 環境診斷表 */
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 12px; }
+  .kv + .kv { border-top: 1px dashed var(--line); }
+  .kv dt { color: var(--muted); flex-shrink: 0; margin: 0; }
+  .kv dd { margin: 0; text-align: right; font-weight: 600; word-break: break-all; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+
+  /* 讀取狀態：依規格只顯示簡單狀態，不顯示任何卡片欄位值 */
+  #readStatus {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 26px 12px;
+    border-radius: 12px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    min-height: 84px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #readStatus.is-ok   { background: #f0fdf4; color: var(--ok); }
+  #readStatus.is-warn { background: #fffbeb; color: var(--warn); }
+  #readStatus.is-err  { background: #fef2f2; color: var(--err); }
+
+  button {
+    font: inherit; font-weight: 700; font-size: 13px;
+    border-radius: 10px; padding: 12px 14px; width: 100%;
+    border: 1px solid var(--brand); cursor: pointer;
+    background: var(--brand); color: #fff;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.ghost { background: #fff; color: var(--brand); }
+  button.tiny { padding: 8px 10px; font-size: 12px; }
+  button:disabled { opacity: 0.45; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+
+  label.field { display: block; margin-top: 10px; }
+  label.field span { font-size: 11px; color: var(--muted); font-weight: 700; }
+  input[type=text] {
+    width: 100%; margin-top: 4px; padding: 10px;
+    border: 1px solid var(--line); border-radius: 9px;
+    font: inherit; font-size: 13px; background: #fff; color: var(--ink);
+  }
+  .toggle { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 12px; }
+  .toggle input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--brand); flex-shrink: 0; }
+  .toggle small { display: block; color: var(--muted); font-size: 11px; }
+
+  /* 診斷日誌 */
+  #log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px; line-height: 1.5;
+    max-height: 320px; overflow-y: auto;
+    background: #fafafa; border: 1px solid var(--line); border-radius: 9px;
+    padding: 8px; margin: 0; white-space: pre-wrap; word-break: break-all;
+  }
+  #log div { padding: 2px 0; border-bottom: 1px solid #f4f4f5; }
+  #log .t { color: #a1a1aa; }
+  .banner {
+    border-radius: 10px; padding: 10px 12px; font-size: 12px;
+    font-weight: 600; margin-bottom: 12px; display: none;
+  }
+  .banner.show { display: block; }
+  .banner.err { background: #fef2f2; color: var(--err); border: 1px solid #fecaca; }
+  .note { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>騎跡 · NFC 診斷工具</h1>
+<p class="sub">獨立於 App 的排查頁面。日誌會存進 localStorage，就算頁面被重新載入也不會消失。</p>
+
+<!-- 頁面刷新偵測結果，只在命中時顯示 -->
+<div id="reloadBanner" class="banner err"></div>
+
+<!-- ═══ 1. 環境診斷 ═══ -->
+<section class="card">
+  <h2>① 環境診斷</h2>
+  <dl style="margin:0">
+    <div class="kv"><dt>Web NFC（NDEFReader）</dt><dd id="d-nfc">—</dd></div>
+    <div class="kv"><dt>安全上下文 isSecureContext</dt><dd id="d-secure">—</dd></div>
+    <div class="kv"><dt>通訊協定</dt><dd id="d-proto">—</dd></div>
+    <div class="kv"><dt>頁面可見性</dt><dd id="d-vis">—</dd></div>
+    <div class="kv"><dt>本次載入方式</dt><dd id="d-navtype">—</dd></div>
+    <div class="kv"><dt>本頁累計載入次數</dt><dd id="d-loads">—</dd></div>
+    <div class="kv"><dt>掃描 session</dt><dd id="d-scan">未啟動</dd></div>
+  </dl>
+  <p class="note">「累計載入次數」若在你只開一次頁、貼幾次卡之後不斷上升，就代表頁面確實被重新載入過。</p>
+</section>
+
+<!-- ═══ 2. 讀取 ═══ -->
+<section class="card">
+  <h2>② 讀取卡片</h2>
+  <div id="readStatus">尚未開始掃描</div>
+  <div class="row">
+    <button type="button" id="btnStart">開始掃描</button>
+    <button type="button" id="btnStop" class="ghost" disabled>停止掃描</button>
+  </div>
+  <label class="toggle">
+    <input type="checkbox" id="optUpload" checked />
+    <span>讀取成功後自動上傳 Firestore
+      <small>寫入正式的 nfcTags 集合（與 App 的 syncBikeRegistration 相同路徑），
+      目的是重現上傳失敗的確切原因。上傳失敗只寫日誌，不影響讀取。</small></span>
+  </label>
+  <p class="note">同一張卡 3 秒內不會重複處理。掃描會「持續」進行不自動停止——這正是攔截
+    Android 系統開啟標籤網址的關鍵，請刻意保持掃描狀態多貼幾次卡測試。</p>
+</section>
+
+<!-- ═══ 3. 寫入 ═══ -->
+<section class="card">
+  <h2>③ 寫入卡片</h2>
+  <label class="field"><span>tagId・標籤編號</span>
+    <input type="text" id="f-tagId" value="STFA-BIKE-001" autocomplete="off" /></label>
+  <label class="field"><span>bikeId・單車識別碼</span>
+    <input type="text" id="f-bikeId" value="bike-a1b2c3" autocomplete="off" /></label>
+  <label class="field"><span>frameNo・車架編號</span>
+    <input type="text" id="f-frameNo" value="HK-MD24-0158" autocomplete="off" /></label>
+  <label class="field"><span>appUrl・App 網址</span>
+    <input type="text" id="f-appUrl" value="https://bicycle-ee76c.web.app" autocomplete="off" /></label>
+
+  <label class="toggle">
+    <input type="checkbox" id="optUrlRecord" checked />
+    <span>同時寫入 url 記錄（與 App 現行行為一致）
+      <small>取消勾選可寫出「只有 JSON、沒有 url 記錄」的對照卡。
+      兩種卡各測一次，就能證實頁面跳轉是不是 url 記錄造成的。</small></span>
+  </label>
+
+  <div class="row"><button type="button" id="btnWrite">寫入標籤</button></div>
+  <p class="note">NTAG213 只有 144 bytes；url + JSON 兩筆記錄很容易爆容量。若寫入失敗，
+    先取消 url 記錄再試一次即可分辨是不是容量問題。</p>
+</section>
+
+<!-- ═══ 4. 日誌 ═══ -->
+<section class="card">
+  <h2>④ 診斷日誌</h2>
+  <div id="log"></div>
+  <div class="row">
+    <button type="button" id="btnCopy" class="ghost tiny">複製日誌</button>
+    <button type="button" id="btnClear" class="ghost tiny">清除日誌</button>
+  </div>
+</section>
+
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════════════════
+   常數
+   ══════════════════════════════════════════════════════════ */
+
+// 與 src/firebase.ts 的 FALLBACK_FIREBASE_CONFIG 一致。
+// apiKey 屬可公開的客戶端設定（本來就會出現在網頁 bundle），安全性由 Firestore 規則把關。
+var FIREBASE_API_KEY = 'AIzaSyD-OWygHwIvIss5UV11IxzzaslmTWt1Uik';
+var FIREBASE_PROJECT_ID = 'bicycle-ee76c';
+var FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/' +
+                     FIREBASE_PROJECT_ID + '/databases/(default)/documents';
+
+var LOG_KEY = 'nfcTool.log';          // 日誌（跨頁面載入保留，這是偵測刷新的關鍵）
+var LAST_READ_KEY = 'nfcTool.lastReadAt';
+var LOAD_COUNT_KEY = 'nfcTool.loadCount';
+var LOG_LIMIT = 300;
+var DEBOUNCE_MS = 3000;               // 同卡去抖
+var WRITE_TIMEOUT_MS = 15000;
+
+// 與 src/nfc.ts 的 BikeTagData 完全一致
+var TAG_FIELDS = ['tagId', 'bikeId', 'frameNo', 'appUrl'];
+
+/* ══════════════════════════════════════════════════════════
+   日誌：同時寫 Console 與 localStorage
+   localStorage 是刻意的——頁面若被 NFC dispatch 重新載入，
+   記憶體中的日誌會消失，只有 localStorage 能留下犯罪證據。
+   ══════════════════════════════════════════════════════════ */
+
+var logEl = document.getElementById('log');
+
+// localStorage 在部分環境會直接拋 SecurityError（站台資料被封鎖、data: URL、
+// 部分無痕設定），且是「存取即拋」而不是回傳 null。所有讀寫一律走這兩個包裝，
+// 否則單一次 getItem 就會中斷整個初始化流程。
+function safeGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+function safeSet(key, value) {
+  try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
+}
+function safeRemove(key) {
+  try { localStorage.removeItem(key); } catch (e) { /* 略過 */ }
+}
+
+// 開頁時就確認儲存空間可不可用——不可用的話「跨載入保留日誌」這個核心診斷能力會失效，
+// 必須明講，不能讓使用者以為沒有證據就等於沒有發生跳轉。
+var storageOk = (function () {
+  var probe = 'nfcTool.probe';
+  return safeSet(probe, '1') ? (safeRemove(probe), true) : false;
+})();
+
+function loadLog() {
+  try { return JSON.parse(safeGet(LOG_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+
+function log(level, msg) {
+  var entry = { t: new Date().toISOString().slice(11, 23), level: level, msg: String(msg) };
+  var all = loadLog();
+  all.push(entry);
+  if (all.length > LOG_LIMIT) all = all.slice(-LOG_LIMIT);
+  safeSet(LOG_KEY, JSON.stringify(all));
+
+  if (level === 'err') console.error('[NFC]', msg);
+  else if (level === 'warn') console.warn('[NFC]', msg);
+  else console.log('[NFC]', msg);
+
+  appendLogLine(entry);
+}
+
+function appendLogLine(entry) {
+  var div = document.createElement('div');
+  var colour = entry.level === 'err' ? 'err' : entry.level === 'warn' ? 'warn' : entry.level === 'ok' ? 'ok' : '';
+  div.innerHTML = '<span class="t">' + entry.t + '</span> ' +
+                  '<span class="' + colour + '">' + escapeHtml(entry.msg) + '</span>';
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderStoredLog() {
+  logEl.innerHTML = '';
+  loadLog().forEach(appendLogLine);
+}
+
+/* ══════════════════════════════════════════════════════════
+   狀態顯示：依規格只顯示四種簡單訊息，不顯示任何卡片欄位值
+   （欄位值只進 Console 與日誌區）
+   ══════════════════════════════════════════════════════════ */
+
+var statusEl = document.getElementById('readStatus');
+
+function setStatus(text, kind) {
+  statusEl.textContent = text;
+  statusEl.className = kind ? 'is-' + kind : '';
+}
+
+/* ══════════════════════════════════════════════════════════
+   checkSupport()：支援度 + 安全上下文
+   ══════════════════════════════════════════════════════════ */
+
+function checkSupport() {
+  var hasApi = typeof window !== 'undefined' && 'NDEFReader' in window;
+  var secure = window.isSecureContext === true;
+
+  setText('d-nfc', hasApi ? '✓ 支援' : '✗ 不支援', hasApi ? 'ok' : 'err');
+  setText('d-secure', secure ? '✓ 是' : '✗ 否', secure ? 'ok' : 'err');
+  setText('d-proto', location.protocol, location.protocol === 'https:' ? 'ok' : 'err');
+
+  if (!hasApi) {
+    log('err', 'checkSupport：此瀏覽器沒有 NDEFReader。Web NFC 僅 Android 版 Chrome 89+ 支援，iOS 與桌面一律不支援。');
+    return { ok: false, reason: 'not-supported' };
+  }
+  if (!secure) {
+    // 這是最容易被誤判成「卡片讀不到」的情況：API 存在但呼叫必定失敗
+    log('err', 'checkSupport：非安全上下文（目前為 ' + location.protocol + '）。NDEFReader 物件存在但 scan() 一定會拋 NotAllowedError，請改用 https:// 開啟。');
+    return { ok: false, reason: 'insecure' };
+  }
+  log('ok', 'checkSupport：通過（NDEFReader 存在 + https 安全上下文）');
+  return { ok: true };
+}
+
+function setText(id, text, cls) {
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.className = cls || '';
+}
+
+/* ══════════════════════════════════════════════════════════
+   parseNDEFMessage()：三層退回解析
+   與 src/nfc.ts 的 tryParseBikeTag() 邏輯一致，確保診斷結果
+   可以直接套用回 App。
+     1. 嚴格 JSON.parse
+     2. 正則逐欄位擷取（容忍非標準格式）
+     3. 整段文字當成標籤編號
+   ══════════════════════════════════════════════════════════ */
+
+function extractFieldsFromText(text) {
+  var result = {};
+  TAG_FIELDS.forEach(function (field) {
+    var re = new RegExp('["\']?' + field + '["\']?\\s*[:=]\\s*["\']?([^"\',}\\s]+)["\']?', 'i');
+    var m = text.match(re);
+    if (m && m[1]) result[field] = m[1].trim();
+  });
+  return result;
+}
+
+function parseNDEFMessage(message) {
+  var records = message.records || [];
+  // 先把每筆記錄的型別印出來——排查時最有用的一行
+  var shapes = records.map(function (r) {
+    return r.recordType + (r.mediaType ? '(' + r.mediaType + ')' : '');
+  });
+  log('info', '讀到 ' + records.length + ' 筆 NDEF 記錄：' + (shapes.join(', ') || '（無）'));
+
+  // 明確標示卡片是否含 url 記錄——這是問題三的核心證據
+  var hasUrl = records.some(function (r) { return r.recordType === 'url' || r.recordType === 'absolute-url'; });
+  if (hasUrl) {
+    log('warn', '⚠ 此卡片含有 url 記錄。掃描一旦停止或頁面失焦，Android 系統會接手並用 Chrome 開啟該網址 → 看起來就像頁面「刷新」。');
+  } else {
+    log('info', '此卡片不含 url 記錄，系統不會自動開啟網頁。');
+  }
+
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i];
+    var text;
+    try {
+      text = new TextDecoder(r.encoding || 'utf-8').decode(r.data);
+    } catch (e) {
+      continue; // 這筆解不出文字，換下一筆
+    }
+    if (!text || !text.trim()) continue;
+
+    // 第 1 層：嚴格 JSON
+    try {
+      var parsed = JSON.parse(text);
+      if (parsed && typeof parsed.tagId === 'string' && typeof parsed.frameNo === 'string') {
+        log('ok', '解析成功（第 1 層・嚴格 JSON）');
+        return parsed;
+      }
+    } catch (e) { /* 落到第 2 層 */ }
+
+    // 第 2 層：正則擷取
+    var f = extractFieldsFromText(text);
+    if (f.tagId || f.frameNo) {
+      log('warn', '解析成功（第 2 層・正則擷取）——卡片內容不是嚴格 JSON，建議重寫此卡。');
+      return {
+        tagId: f.tagId || f.frameNo,
+        bikeId: f.bikeId || '',
+        frameNo: f.frameNo || f.tagId,
+        appUrl: f.appUrl || ''
+      };
+    }
+
+    // 第 3 層：整段文字當編號（url 記錄會落到這裡，故跳過）
+    if (r.recordType !== 'url' && r.recordType !== 'absolute-url') {
+      log('warn', '解析成功（第 3 層・純文字兜底）——卡片只有一段無結構文字。');
+      return { tagId: text.trim(), bikeId: '', frameNo: text.trim(), appUrl: '' };
+    }
+  }
+
+  log('err', '所有記錄都無法解碼成有效內容。');
+  return null;
+}
+
+/* ══════════════════════════════════════════════════════════
+   buildNDEFMessage()：組裝寫入訊息
+   ══════════════════════════════════════════════════════════ */
+
+function buildNDEFMessage(data, includeUrl) {
+  var records = [];
+  if (includeUrl && data.appUrl) {
+    // url 記錄：讓未安裝 App 的手機感應標籤也能開啟網址
+    records.push({ recordType: 'url', data: data.appUrl });
+  }
+  // mime 記錄：App 讀回完整識別資料
+  records.push({
+    recordType: 'mime',
+    mediaType: 'application/json',
+    data: new TextEncoder().encode(JSON.stringify(data))
+  });
+  return { records: records };
+}
+
+/* ══════════════════════════════════════════════════════════
+   讀取：常駐 scan session（不讀完就停）
+   ══════════════════════════════════════════════════════════ */
+
+var scanCtrl = null;      // AbortController
+var scanning = false;
+var lastTagKey = '';      // 去抖用
+var lastTagAt = 0;
+
+async function startReading() {
+  var support = checkSupport();
+  if (!support.ok) {
+    setStatus(support.reason === 'not-supported'
+      ? '❌ 此瀏覽器不支援 Web NFC'
+      : '❌ 非 https 安全連線，無法使用 NFC', 'err');
+    return;
+  }
+  if (scanning) { log('info', '掃描已在進行中，忽略重複啟動。'); return; }
+
+  scanCtrl = new AbortController();
+  var reader = new NDEFReader();
+
+  // 務必在 scan() 之前掛好監聽器：若呼叫時手機已貼著卡片，
+  // reading 事件可能早於 scan() 的 promise 觸發，晚掛就會漏讀。
+  reader.onreading = function (event) { onReading(event); };
+  reader.onreadingerror = function () {
+    log('err', 'onreadingerror：偵測到標籤但無法讀取（可能移開太快、卡片損壞或非 NDEF 格式）');
+    setStatus('⚠️ 讀取失敗，請重新嘗試', 'warn');
+  };
+
+  try {
+    // 第一次呼叫時 Chrome 會自動彈出「允許使用 NFC？」系統提示。
+    // 必須在使用者手勢內呼叫——此函式由按鈕 click 觸發，符合條件。
+    await reader.scan({ signal: scanCtrl.signal });
+    scanning = true;
+    setScanUi(true);
+    setStatus('掃描中，請將卡片靠近手機背面');
+    log('ok', 'scan() 已啟動，掃描 session 常駐中（掃描期間系統不會自動開啟標籤網址）');
+  } catch (err) {
+    scanning = false;
+    setScanUi(false);
+    reportNfcError(err, '讀取');
+  }
+}
+
+function stopReading() {
+  if (scanCtrl) { scanCtrl.abort(); scanCtrl = null; }
+  scanning = false;
+  setScanUi(false);
+  setStatus('已停止掃描');
+  log('warn', 'scan() 已中止。注意：從這一刻起，貼上含 url 記錄的卡片會由 Android 系統接手開啟網址。');
+}
+
+function setScanUi(on) {
+  document.getElementById('btnStart').disabled = on;
+  document.getElementById('btnStop').disabled = !on;
+  setText('d-scan', on ? '進行中' : '未啟動', on ? 'ok' : 'warn');
+}
+
+function onReading(event) {
+  var serial = event.serialNumber || '(無序號)';
+  var now = Date.now();
+
+  // 3 秒去抖：卡片貼著不動時 Android 會連續觸發 reading
+  if (serial === lastTagKey && now - lastTagAt < DEBOUNCE_MS) {
+    log('info', '同一張卡 ' + DEBOUNCE_MS + 'ms 內重複觸發，已略過。');
+    return;
+  }
+  lastTagKey = serial;
+  lastTagAt = now;
+
+  // 記下讀卡時間——下次頁面載入時用來判斷是否為標籤觸發的跳轉
+  safeSet(LAST_READ_KEY, String(now));
+
+  log('ok', '偵測到標籤，序號 ' + serial);
+  var data = parseNDEFMessage(event.message);
+  handleTagData(data);
+}
+
+function handleTagData(data) {
+  if (!data) {
+    setStatus('⚠️ 讀取失敗，請重新嘗試', 'warn');
+    return;
+  }
+  setStatus('✅ 讀取成功，請移開卡片', 'ok');
+
+  // 欄位值只寫入 Console / 日誌，頁面上不顯示
+  log('info', '欄位內容 → ' + TAG_FIELDS.map(function (k) {
+    return k + '=' + (data[k] || '(空)');
+  }).join(' | '));
+
+  if (document.getElementById('optUpload').checked) {
+    // 不 await：上傳失敗絕不阻塞讀取流程
+    uploadToServer(data).catch(function (err) {
+      log('err', '上傳未預期例外：' + (err && err.message ? err.message : err));
+    });
+  } else {
+    log('info', '自動上傳已關閉，略過上傳。');
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   寫入
+   ══════════════════════════════════════════════════════════ */
+
+async function writeTagData() {
+  var support = checkSupport();
+  if (!support.ok) {
+    setStatus(support.reason === 'not-supported'
+      ? '❌ 此瀏覽器不支援 Web NFC'
+      : '❌ 非 https 安全連線，無法使用 NFC', 'err');
+    return;
+  }
+
+  var data = {};
+  TAG_FIELDS.forEach(function (k) {
+    data[k] = document.getElementById('f-' + k).value.trim();
+  });
+  if (!data.tagId || !data.frameNo) {
+    setStatus('⚠️ 請先填寫 tagId 與 frameNo', 'warn');
+    log('warn', '寫入中止：tagId / frameNo 不可留空。');
+    return;
+  }
+
+  var includeUrl = document.getElementById('optUrlRecord').checked;
+  var message = buildNDEFMessage(data, includeUrl);
+  var payloadBytes = JSON.stringify(data).length + (includeUrl ? data.appUrl.length : 0);
+  log('info', '準備寫入：' + message.records.length + ' 筆記錄，約 ' + payloadBytes +
+              ' bytes（NTAG213 上限約 144，NTAG215 約 504）');
+
+  var btn = document.getElementById('btnWrite');
+  btn.disabled = true;
+  setStatus('請將卡片靠近手機背面…');
+
+  var ctrl = new AbortController();
+  var timer = setTimeout(function () { ctrl.abort(); }, WRITE_TIMEOUT_MS);
+
+  try {
+    var writer = new NDEFReader();
+    await writer.write(message, { signal: ctrl.signal });
+    clearTimeout(timer);
+    setStatus('✅ 寫入成功，請移開卡片', 'ok');
+    log('ok', '寫入成功：tagId=' + data.tagId + (includeUrl ? '（含 url 記錄）' : '（不含 url 記錄）'));
+  } catch (err) {
+    clearTimeout(timer);
+    reportNfcError(err, '寫入', includeUrl);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   錯誤分類：把 DOMException 翻成可行動的中文說明
+   ══════════════════════════════════════════════════════════ */
+
+function reportNfcError(err, action, includeUrl) {
+  var name = (err && err.name) || 'Unknown';
+  var msg = (err && err.message) || String(err);
+  var advice;
+
+  switch (name) {
+    case 'NotAllowedError':
+      advice = '權限被拒。可能先前按過「拒絕」（Chrome 會記住，之後不再彈窗）。' +
+               '請點網址列左側鎖頭 → 網站設定 → NFC → 改為允許，並確認手機系統 NFC 已開啟，然後重新整理。';
+      break;
+    case 'NotSupportedError':
+      advice = includeUrl
+        ? '不支援或容量不足。NTAG213 只有 144 bytes，url + JSON 兩筆記錄很容易超出——請取消「同時寫入 url 記錄」再試一次來確認。'
+        : '此裝置或此標籤不支援該操作。';
+      break;
+    case 'NotReadableError':
+      advice = '無法存取標籤。常見於唯讀卡、已鎖定（locked）的卡，或非 NDEF 格式的卡。';
+      break;
+    case 'NetworkError':
+      advice = '傳輸中斷。卡片在' + action + '過程中被移開了，請貼穩不要動直到出現成功提示。';
+      break;
+    case 'AbortError':
+      advice = '操作被中止（逾時 ' + (WRITE_TIMEOUT_MS / 1000) + ' 秒內未偵測到標籤，或你手動停止）。';
+      break;
+    case 'InvalidStateError':
+      advice = '已有另一個 NFC 操作進行中，請先停止掃描再試。';
+      break;
+    default:
+      advice = '未分類錯誤，請把下方原始訊息一併回報。';
+  }
+
+  setStatus('⚠️ ' + action + '失敗，請重新嘗試', 'warn');
+  log('err', action + '失敗 [' + name + '] ' + msg);
+  log('err', '→ ' + advice);
+}
+
+/* ══════════════════════════════════════════════════════════
+   uploadToServer()：Firestore REST（零依賴）
+   刻意打與 App 相同的 nfcTags/{tagId} 路徑與同一組 Firestore 規則，
+   以重現 App 端被靜默吞掉的上傳失敗原因。
+   ══════════════════════════════════════════════════════════ */
+
+var cachedAuth = null;   // { idToken, uid, at }
+
+function safeId(value) {
+  return value.trim().replace(/[^a-zA-Z0-9_-]/g, '-').replace(/-+/g, '-');
+}
+
+async function signInAnonymously() {
+  // Token 有效期 1 小時，這裡保守用 50 分鐘
+  if (cachedAuth && Date.now() - cachedAuth.at < 50 * 60 * 1000) return cachedAuth;
+
+  var res = await fetch(
+    'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=' + FIREBASE_API_KEY,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ returnSecureToken: true })
+    }
+  );
+  var body = await res.json();
+
+  if (!res.ok) {
+    var code = body && body.error && body.error.message;
+    if (code === 'ADMIN_ONLY_OPERATION' || code === 'OPERATION_NOT_ALLOWED') {
+      throw new Error('匿名登入未啟用 → 請到 Firebase Console → Authentication → Sign-in method → 開啟「匿名」。這正是 App 端 getAnonymousUid() 靜默回傳 null 的原因。');
+    }
+    throw new Error('匿名登入失敗 (' + res.status + ')：' + (code || JSON.stringify(body)));
+  }
+
+  cachedAuth = { idToken: body.idToken, uid: body.localId, at: Date.now() };
+  log('ok', '匿名登入成功，uid=' + body.localId);
+  return cachedAuth;
+}
+
+async function uploadToServer(data) {
+  var tagId = safeId(data.tagId || '');
+  if (!tagId) { log('warn', '上傳略過：卡片沒有可用的 tagId。'); return; }
+
+  try {
+    var auth = await signInAnonymously();
+
+    // updateMask 等同 App 端 setDoc(..., { merge: true })
+    var fields = ['tagId', 'bikeId', 'frameNo', 'ownerUid', 'status', 'updatedAt'];
+    var url = FIRESTORE_BASE + '/nfcTags/' + encodeURIComponent(tagId) + '?' +
+              fields.map(function (f) { return 'updateMask.fieldPaths=' + f; }).join('&');
+
+    var res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + auth.idToken
+      },
+      body: JSON.stringify({
+        fields: {
+          tagId:     { stringValue: tagId },
+          bikeId:    { stringValue: data.bikeId || '' },
+          frameNo:   { stringValue: data.frameNo || '' },
+          ownerUid:  { stringValue: auth.uid },
+          status:    { stringValue: 'active' },
+          updatedAt: { timestampValue: new Date().toISOString() }
+        }
+      })
+    });
+
+    if (res.ok) { log('ok', '上傳成功：nfcTags/' + tagId); return; }
+
+    var errBody = await res.json().catch(function () { return {}; });
+    var reason = (errBody.error && errBody.error.message) || res.statusText;
+    log('err', '上傳失敗 (' + res.status + ')：' + reason);
+
+    if (res.status === 403) {
+      // 這正是我在分析報告裡預測的失敗模式
+      log('err', '→ Firestore 規則拒絕。nfcTags/{tagId} 的 update 要求 resource.data.ownerUid == auth.uid。' +
+                 '這張卡若曾被「另一個匿名 uid」寫過（清快取 / 換裝置 / 無痕模式都會換 uid），就會被擋。' +
+                 '請到 Firestore Console 查看 nfcTags/' + tagId + ' 的 ownerUid 是否等於 ' + auth.uid);
+    }
+  } catch (err) {
+    // 依規格：上傳失敗只寫 Console，不影響讀取流程
+    log('err', '上傳例外：' + (err && err.message ? err.message : err));
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   頁面刷新偵測 —— 本工具的核心診斷能力
+   ══════════════════════════════════════════════════════════ */
+
+function detectReload() {
+  var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+  var navType = nav ? nav.type : 'unknown';
+  setText('d-navtype', navType);
+
+  var count = Number(safeGet(LOAD_COUNT_KEY) || 0) + 1;
+  safeSet(LOAD_COUNT_KEY, String(count));
+  setText('d-loads', storageOk ? String(count) : '無法統計（儲存空間被封鎖）', storageOk ? '' : 'err');
+
+  log('info', '頁面載入 #' + count + '（navigation type = ' + navType + '）' +
+              (document.referrer ? '，referrer=' + document.referrer : ''));
+
+  if (!storageOk) {
+    // 沒有儲存空間就留不下跨載入的證據，必須明確警告而不是靜靜失效
+    log('err', '⚠ 此環境封鎖了 localStorage，日誌與載入次數無法跨頁面保留，' +
+               '「頁面刷新偵測」將失效。請改用一般（非無痕）分頁並允許站台資料後重測。');
+  }
+
+  // 關鍵判斷：本次載入是否緊接在一次讀卡之後？
+  var lastRead = Number(safeGet(LAST_READ_KEY) || 0);
+  if (lastRead) {
+    var gap = Date.now() - lastRead;
+    if (gap < 10000) {
+      var verdict = '⚠ 本頁在上一次讀卡後僅 ' + gap + ' ms 就重新載入 —— ' +
+                    '這幾乎可確定是標籤內的 url 記錄觸發了 Android NFC dispatch，' +
+                    '由系統用 Chrome 開啟該網址，而非 JavaScript 造成的刷新。';
+      log('err', verdict);
+      var banner = document.getElementById('reloadBanner');
+      banner.textContent = verdict;
+      banner.classList.add('show');
+    }
+  }
+}
+
+function wireLifecycleListeners() {
+  // 不回傳字串，避免跳出「確定要離開嗎」對話框
+  window.addEventListener('beforeunload', function () {
+    log('warn', 'beforeunload：頁面即將卸載');
+  });
+
+  window.addEventListener('pagehide', function (e) {
+    log('warn', 'pagehide：頁面隱藏（persisted=' + e.persisted + '）');
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    setText('d-vis', document.visibilityState, document.visibilityState === 'visible' ? 'ok' : 'warn');
+    log('info', 'visibilitychange → ' + document.visibilityState);
+    if (document.visibilityState === 'hidden' && scanning) {
+      // 頁面不可見時 Web NFC 停止攔截，系統會接手處理標籤
+      log('warn', '⚠ 頁面轉為背景，掃描期間的 NDEF 攔截失效，此時貼卡會由系統開啟標籤網址。');
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════════════════
+   初始化
+   ══════════════════════════════════════════════════════════ */
+
+renderStoredLog();
+log('info', '──────── 工具啟動 ────────');
+detectReload();
+setText('d-vis', document.visibilityState, document.visibilityState === 'visible' ? 'ok' : 'warn');
+checkSupport();
+wireLifecycleListeners();
+
+document.getElementById('btnStart').addEventListener('click', function (e) {
+  e.preventDefault();
+  startReading();
+});
+document.getElementById('btnStop').addEventListener('click', function (e) {
+  e.preventDefault();
+  stopReading();
+});
+document.getElementById('btnWrite').addEventListener('click', function (e) {
+  e.preventDefault();
+  writeTagData();
+});
+document.getElementById('btnClear').addEventListener('click', function (e) {
+  e.preventDefault();
+  safeRemove(LOG_KEY);
+  safeRemove(LAST_READ_KEY);
+  safeRemove(LOAD_COUNT_KEY);
+  logEl.innerHTML = '';
+  log('info', '日誌已清除');
+});
+document.getElementById('btnCopy').addEventListener('click', function (e) {
+  e.preventDefault();
+  var text = loadLog().map(function (x) { return x.t + ' [' + x.level + '] ' + x.msg; }).join('\n');
+  navigator.clipboard.writeText(text).then(
+    function () { log('ok', '日誌已複製到剪貼簿'); },
+    function () { log('warn', '複製失敗，請手動選取日誌文字'); }
+  );
+});
+</script>
+</body>
+</html>
